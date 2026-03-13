@@ -1,0 +1,56 @@
+<!-- 
+  Add these permissions and service declarations to android/app/src/main/AndroidManifest.xml
+  
+  PERMISSIONS: Place inside the <manifest> tag, before <application>
+  SERVICE: Place inside the <application> tag
+-->
+
+<!-- ============ PERMISSIONS ============ -->
+
+<!-- Call Log Access -->
+<uses-permission android:name="android.permission.READ_CALL_LOG" />
+<uses-permission android:name="android.permission.WRITE_CALL_LOG" />
+
+<!-- Phone State for detecting calls -->
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+<uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
+
+<!-- Microphone for call recording -->
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+<!-- Storage for saving recordings -->
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
+    android:maxSdkVersion="28" />
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" 
+    android:maxSdkVersion="32" />
+
+<!-- Internet for syncing recordings -->
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+<!-- Foreground service for call detection -->
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+
+<!-- Required for Android 13+ to post notifications -->
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+
+<!-- ============ SERVICE DECLARATION ============ -->
+<!-- Add this inside <application> tag -->
+
+<service
+    android:name=".plugins.CallRecordingService"
+    android:enabled="true"
+    android:exported="false"
+    android:foregroundServiceType="phoneCall" />
+
+<!-- Receiver for outgoing calls -->
+<receiver
+    android:name=".plugins.OutgoingCallReceiver"
+    android:enabled="true"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
+    </intent-filter>
+</receiver>

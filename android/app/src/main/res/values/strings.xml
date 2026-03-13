@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">mobilecrmwithsimcalls</string>
+    <string name="title_activity_main">mobilecrmwithsimcalls</string>
+    <string name="package_name">com.lovable.mobilecrmwithsimcalls</string>
+    <string name="custom_url_scheme">com.lovable.mobilecrmwithsimcalls</string>
+</resources>

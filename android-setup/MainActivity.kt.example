@@ -1,0 +1,23 @@
+// Replace android/app/src/main/java/.../MainActivity.kt with this content
+// Update the package name to match your actual package
+
+package app.lovable.mobilecrm
+
+import android.os.Bundle
+import com.getcapacitor.BridgeActivity
+
+// Import the plugins
+import app.lovable.mobilecrm.plugins.CallLogPlugin
+import app.lovable.mobilecrm.plugins.AudioRecorderPlugin
+import app.lovable.mobilecrm.plugins.CallRecordingPlugin
+
+class MainActivity : BridgeActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // Register custom plugins before calling super.onCreate()
+        registerPlugin(CallLogPlugin::class.java)
+        registerPlugin(AudioRecorderPlugin::class.java)
+        registerPlugin(CallRecordingPlugin::class.java)
+        
+        super.onCreate(savedInstanceState)
+    }
+}
