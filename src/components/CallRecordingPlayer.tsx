@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Pause, Clock, Sparkles, ChevronDown, ChevronUp, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useCallRecordings, CallRecording } from '@/hooks/useCallRecordings';
+import { CallRecording } from '@/hooks/useCallRecordings';
+import { supabase } from '@/integrations/supabase/client';
 
 interface CallRecordingPlayerProps {
   recording: CallRecording;
@@ -23,19 +24,26 @@ const CallRecordingPlayer = ({ recording, compact = false }: CallRecordingPlayer
   const [showDetails, setShowDetails] = useState(false);
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const { getSignedUrl } = useCallRecordings();
 
   useEffect(() => {
     const loadAudioUrl = async () => {
       if (recording.file_path && !audioUrl) {
         setIsLoadingUrl(true);
-        const url = await getSignedUrl(recording.file_path);
-        setAudioUrl(url);
+        const { data, error } = await supabase.storage
+          .from('call-recordings')
+          .createSignedUrl(recording.file_path, 3600);
+
+        if (error) {
+          console.error('CallRecordingPlayer signed URL error:', error);
+          setAudioUrl(null);
+        } else {
+          setAudioUrl(data.signedUrl);
+        }
         setIsLoadingUrl(false);
       }
     };
     loadAudioUrl();
-  }, [recording.file_path]);
+  }, [recording.file_path, audioUrl]);
 
   useEffect(() => {
     const audio = audioRef.current;

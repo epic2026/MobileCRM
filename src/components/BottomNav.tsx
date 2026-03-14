@@ -1,4 +1,4 @@
-import { Phone, Users, Clock, Settings, Grid3X3, Target, Activity, ListTodo } from 'lucide-react';
+import { Settings, Target, Activity, ListTodo } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface BottomNavProps {
@@ -10,14 +10,13 @@ const navItems = [
   { id: 'leads', icon: Target, label: 'Leads' },
   { id: 'tasks', icon: ListTodo, label: 'Tasks' },
   { id: 'activity', icon: Activity, label: 'Activity' },
-  { id: 'dialpad', icon: Grid3X3, label: 'Dial' },
   { id: 'settings', icon: Settings, label: 'Settings' },
 ];
 
 const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border z-50">
-      <div className="max-w-md mx-auto flex justify-around items-center h-16 px-2">
+    <nav className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border z-50 pb-[env(safe-area-inset-bottom)]">
+      <div className="w-full max-w-md mx-auto flex justify-around items-center h-16 px-2">
         {navItems.map((item) => {
           const isActive = activeTab === item.id;
           return (

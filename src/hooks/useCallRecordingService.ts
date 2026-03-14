@@ -13,6 +13,8 @@ export interface CallEvent {
   duration?: number;
   filePath?: string;
   timestamp?: number;
+  audioSource?: number;
+  audioSourceName?: string;
 }
 
 export interface DebugTraceEntry {
@@ -29,11 +31,15 @@ export const useCallRecordingService = () => {
     microphone: 'granted' | 'denied';
     phoneState: 'granted' | 'denied';
     callLog: 'granted' | 'denied';
+    mediaAudio?: 'granted' | 'denied';
     allGranted: boolean;
   } | null>(null);
   const [lastCallEvent, setLastCallEvent] = useState<CallEvent | null>(null);
   const [debugTrace, setDebugTrace] = useState<DebugTraceEntry[]>([]);
+  const [speakerAssistEnabled, setSpeakerAssistEnabled] = useState(false);
   const listenerRefs = useRef<Array<{ remove: () => void }>>([]);
+  const isSyncingPendingRef = useRef(false);
+  const hasInitializedRef = useRef(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const { uploadRecording, createRecording, analyzeRecording } = useCallRecordings();
@@ -65,11 +71,49 @@ export const useCallRecordingService = () => {
     }
   }, []);
 
+  const refreshSpeakerAssistStatus = useCallback(async () => {
+    if (!isNativeApp()) return false;
+
+    try {
+      const result = await CallRecordingPlugin.getSpeakerAssistEnabled();
+      setSpeakerAssistEnabled(result.enabled);
+      return result.enabled;
+    } catch (error) {
+      console.error('Error loading speaker assist status:', error);
+      return false;
+    }
+  }, []);
+
+  const updateSpeakerAssist = useCallback(async (enabled: boolean) => {
+    if (!isNativeApp()) return false;
+
+    try {
+      const result = await CallRecordingPlugin.setSpeakerAssistEnabled({ enabled });
+      setSpeakerAssistEnabled(result.enabled);
+      toast({
+        title: 'Speaker Assist Updated',
+        description: result.enabled
+          ? 'Speakerphone will turn on during active call recording.'
+          : 'Speakerphone assist is disabled.',
+      });
+      return result.enabled;
+    } catch (error) {
+      console.error('Error updating speaker assist:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update Speaker Assist setting',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  }, [toast]);
+
   // Check permissions on mount
   useEffect(() => {
     if (isNativeApp()) {
       checkPermissions();
       refreshDebugTrace();
+      refreshSpeakerAssistStatus();
     }
   }, []);
 
@@ -277,7 +321,6 @@ export const useCallRecordingService = () => {
       const callStartedListener = await CallRecordingPlugin.addListener(
         'callStarted',
         (event) => {
-          console.log('Call started:', event);
           setLastCallEvent(event);
           
           if (event.state === 'active') {
@@ -294,7 +337,6 @@ export const useCallRecordingService = () => {
       const callEndedListener = await CallRecordingPlugin.addListener(
         'callEnded',
         (event) => {
-          console.log('Call ended:', event);
           setLastCallEvent(event);
         }
       );
@@ -304,7 +346,7 @@ export const useCallRecordingService = () => {
       const recordingSavedListener = await CallRecordingPlugin.addListener(
         'recordingSaved',
         (event) => {
-          console.log('Recording saved:', event);
+          setLastCallEvent(event);
           handleRecordingSaved(event);
         }
       );
@@ -446,24 +488,195 @@ export const useCallRecordingService = () => {
     }
   }, [setupEventListeners]);
 
-  // Check service status on mount
+  // Check service status once on mount. This avoids repeated plugin calls
+  // caused by callback identity changes during normal React re-renders.
   useEffect(() => {
-    if (isNativeApp()) {
-      checkServiceStatus();
-    }
+    if (!isNativeApp()) return;
+    if (hasInitializedRef.current) return;
 
-    // Cleanup on unmount
+    hasInitializedRef.current = true;
+    checkServiceStatus();
+  }, [checkServiceStatus]);
+
+  useEffect(() => {
     return () => {
       removeEventListeners();
     };
-  }, [checkServiceStatus, removeEventListeners]);
+  }, [removeEventListeners]);
+
+  // On app resume, scan for any local recordings that were saved while the
+  // WebView was suspended (e.g. during an active phone call) and upload them.
+  const processPendingRecordings = useCallback(async () => {
+    if (!isNativeApp() || !user) return;
+    if (isSyncingPendingRef.current) return;
+
+    isSyncingPendingRef.current = true;
+
+    try {
+      const { recordings: localFiles } = await CallRecordingPlugin.listRecordings();
+      if (!localFiles || localFiles.length === 0) return;
+
+      for (const localFile of localFiles) {
+        // Skip tiny/corrupt files (< 1 KB)
+        if (localFile.size < 1024) continue;
+
+        const filename = localFile.fileName;
+        const storagePath = `${user.id}/${filename}`;
+
+        // De-dupe using DB first; storage listing can be flaky on mobile/webview.
+        const { data: existingRows, error: existingRowsError } = await supabase
+          .from('call_recordings')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('file_path', storagePath)
+          .limit(1);
+
+        if (existingRowsError) {
+          console.error('processPendingRecordings: db dedupe lookup failed', existingRowsError);
+        }
+
+        if (existingRows && existingRows.length > 0) {
+          await CallRecordingPlugin.deleteRecordingFile({ filePath: localFile.filePath });
+          continue;
+        }
+
+        const fileData = await CallRecordingPlugin.getRecordingFile({ filePath: localFile.filePath });
+        if (!fileData.exists || !fileData.base64) continue;
+
+        const byteCharacters = atob(fileData.base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const blob = new Blob([new Uint8Array(byteNumbers)], { type: fileData.mimeType || 'audio/mp4' });
+
+        const uploadedStoragePath = await uploadRecording(blob, filename);
+        if (!uploadedStoragePath) {
+          console.error('processPendingRecordings: upload failed', filename);
+          continue;
+        }
+
+        // Estimate duration from file age (lastModified vs file name timestamp)
+        const tsMatch = filename.match(/call_(\d+)\./);
+        const startTs = tsMatch ? parseInt(tsMatch[1]) : localFile.lastModified;
+        const durationSec = Math.round((localFile.lastModified - startTs) / 1000);
+
+        // Try to associate this recording to the nearest existing call log
+        // created around the same call window. This allows rendering the
+        // recording inline under the lead activity call item.
+        const windowStartIso = new Date(startTs - 10 * 60 * 1000).toISOString();
+        const windowEndIso = new Date(localFile.lastModified + 10 * 60 * 1000).toISOString();
+
+        const { data: nearbyCallLogs, error: nearbyCallLogsError } = await supabase
+          .from('call_logs')
+          .select('id, lead_id, created_at')
+          .eq('user_id', user.id)
+          .gte('created_at', windowStartIso)
+          .lte('created_at', windowEndIso)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (nearbyCallLogsError) {
+          console.error('processPendingRecordings: call log lookup failed', nearbyCallLogsError);
+        }
+
+        const matchedCallLog = (nearbyCallLogs || []).reduce<{
+          id: string;
+          lead_id: string | null;
+          created_at: string;
+        } | null>((best, current) => {
+          if (!best) return current;
+          const bestDiff = Math.abs(new Date(best.created_at).getTime() - startTs);
+          const currentDiff = Math.abs(new Date(current.created_at).getTime() - startTs);
+          const bestScore = bestDiff + (best.lead_id ? 0 : 3 * 60 * 1000);
+          const currentScore = currentDiff + (current.lead_id ? 0 : 3 * 60 * 1000);
+          return currentScore < bestScore ? current : best;
+        }, null);
+
+        const recordingData = await createRecording.mutateAsync({
+          file_path: uploadedStoragePath,
+          file_url: null,
+          duration: durationSec > 0 ? durationSec : 0,
+          lead_id: matchedCallLog?.lead_id ?? null,
+          call_log_id: matchedCallLog?.id ?? null,
+          user_id: user.id,
+          ai_summary: null,
+          ai_next_actions: null,
+          transcription: null,
+        });
+
+        if (matchedCallLog?.lead_id) {
+          await supabase.from('lead_activities').insert({
+            lead_id: matchedCallLog.lead_id,
+            type: 'call',
+            title: 'Auto-recorded call synced',
+            description: `Recovered local recording (${durationSec > 0 ? durationSec : 0}s)`,
+            metadata: {
+              recording_id: recordingData.id,
+              call_log_id: matchedCallLog.id,
+              source: 'pending-sync',
+            },
+            user_id: user.id,
+          });
+        }
+
+        if (recordingData) {
+          analyzeRecording.mutate({
+            recordingId: recordingData.id,
+            callDetails: { duration: durationSec, callType: 'unknown' },
+          });
+        }
+
+        await CallRecordingPlugin.deleteRecordingFile({ filePath: localFile.filePath });
+
+        toast({
+          title: 'Call Recorded',
+          description: `Missed recording uploaded (${durationSec}s)`,
+        });
+      }
+    } catch (err) {
+      console.error('processPendingRecordings error:', err);
+    } finally {
+      isSyncingPendingRef.current = false;
+    }
+  }, [user, uploadRecording, createRecording, analyzeRecording, toast]);
+
+  useEffect(() => {
+    if (!isNativeApp() || !user) return;
+
+    // Session restoration can complete slightly after focus; run a delayed pass.
+    const timer = window.setTimeout(() => {
+      processPendingRecordings();
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [user, processPendingRecordings]);
+
+  useEffect(() => {
+    if (!isNativeApp() || !user) return;
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        processPendingRecordings();
+      }
+    }, 20000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [user, processPendingRecordings]);
 
   useEffect(() => {
     if (!isNativeApp()) return;
 
     const handleFocus = () => {
+      if (document.visibilityState === 'hidden') return;
       checkPermissions();
       refreshDebugTrace();
+      // Upload any recordings that were saved while the WebView was suspended
+      processPendingRecordings();
     };
 
     window.addEventListener('focus', handleFocus);
@@ -473,7 +686,7 @@ export const useCallRecordingService = () => {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
     };
-  }, [checkPermissions, refreshDebugTrace]);
+  }, [checkPermissions, refreshDebugTrace, processPendingRecordings]);
 
   return {
     isServiceRunning,
@@ -482,6 +695,7 @@ export const useCallRecordingService = () => {
     permissionState,
     lastCallEvent,
     debugTrace,
+    speakerAssistEnabled,
     isNative: isNativeApp(),
     startService,
     stopService,
@@ -490,5 +704,7 @@ export const useCallRecordingService = () => {
     checkPermissions,
     refreshDebugTrace,
     clearDebugTrace,
+    refreshSpeakerAssistStatus,
+    updateSpeakerAssist,
   };
 };

@@ -3,10 +3,20 @@ package com.lovable.mobilecrmwithsimcalls
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.telephony.TelephonyManager
-import android.util.Log
 
+/**
+ * Receives PHONE_STATE broadcasts to capture the caller's phone number and call
+ * direction, then forwards that metadata to the already-running
+ * [CallRecordingService] via a regular startService() call.
+ *
+ * ⚠️  This receiver does NOT start or stop the service.  Starting a foreground
+ * service from a background BroadcastReceiver is blocked on Android 12+
+ * ("mAllowStartForeground false").  The service is started once, while the app is
+ * in the foreground, when the user enables the toggle in Settings.  It then
+ * listens for call state changes internally via TelephonyCallback so that no
+ * further startForegroundService() call is ever needed from the receiver.
+ */
 class CallStateReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -21,67 +31,53 @@ class CallStateReceiver : BroadcastReceiver() {
         )
 
         if (!CallRecordingState.isAutoRecordingEnabled(context)) {
-            CallRecordingPlugin.trace(context, "receiver", "Ignoring broadcast because auto recording is disabled")
+            CallRecordingPlugin.trace(context, "receiver", "Ignoring broadcast — auto recording is disabled")
             return
         }
 
         when (state) {
             TelephonyManager.EXTRA_STATE_RINGING -> {
-                Log.d("CallStateReceiver", "📲 INCOMING CALL RINGING")
-                CallRecordingPlugin.trace(context, "receiver", "RINGING -> pending incoming call stored")
+                // Store the incoming number so we can forward it to the service on OFFHOOK.
                 CallRecordingState.setPendingCall(context, incomingNumber, "incoming")
+                CallRecordingPlugin.trace(context, "receiver", "RINGING -> stored pending incoming number")
             }
 
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
-                Log.d("CallStateReceiver", "📞 CALL STARTED")
                 val (pendingNumber, pendingType) = CallRecordingState.consumePendingCall(context)
-                val resolvedType = if (pendingType == "incoming") pendingType else "outgoing"
-                CallRecordingPlugin.trace(
-                    context,
-                    "receiver",
-                    "OFFHOOK -> starting service number=${pendingNumber.ifBlank { incomingNumber ?: "" }} type=$resolvedType"
-                )
-                val serviceIntent = Intent(context, CallRecordingService::class.java).apply {
-                    putExtra("phoneNumber", pendingNumber)
-                    putExtra("callType", resolvedType)
-                }
+                val resolvedType = if (pendingType == "incoming") "incoming" else "outgoing"
+                val resolvedNumber = pendingNumber.ifBlank { incomingNumber ?: "" }
 
+                // Forward call metadata to the already-running service using a
+                // plain startService() — this is always allowed on a foreground service.
                 try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        context.startForegroundService(serviceIntent)
-                    } else {
-                        context.startService(serviceIntent)
+                    val updateIntent = Intent(context, CallRecordingService::class.java).apply {
+                        setAction(CallRecordingService.ACTION_UPDATE_CALL_INFO)
+                        putExtra(CallRecordingService.EXTRA_PHONE_NUMBER, resolvedNumber)
+                        putExtra(CallRecordingService.EXTRA_CALL_TYPE, resolvedType)
                     }
-                    CallRecordingPlugin.trace(context, "receiver", "Service start request delivered successfully")
-                } catch (error: Exception) {
+                    context.startService(updateIntent)
                     CallRecordingPlugin.trace(
-                        context,
-                        "receiver",
-                        "Service start failed: ${error.message ?: error::class.java.simpleName}"
+                        context, "receiver",
+                        "OFFHOOK -> forwarded call info to service: number=$resolvedNumber type=$resolvedType"
+                    )
+                } catch (e: Exception) {
+                    // Service may not be running (e.g. killed by OS).  The service's own
+                    // TelephonyCallback will still handle recording — metadata just won't
+                    // include the phone number in this edge case.
+                    CallRecordingPlugin.trace(
+                        context, "receiver",
+                        "OFFHOOK -> could not reach service (${e.message}); recording will proceed without metadata"
                     )
                 }
             }
 
             TelephonyManager.EXTRA_STATE_IDLE -> {
-                Log.d("CallStateReceiver", "📴 CALL ENDED")
-                CallRecordingPlugin.trace(context, "receiver", "IDLE -> stopping service and clearing pending call")
                 CallRecordingState.setPendingCall(context, null, null)
-                try {
-                    context.stopService(
-                        Intent(context, CallRecordingService::class.java)
-                    )
-                    CallRecordingPlugin.trace(context, "receiver", "Service stop request delivered successfully")
-                } catch (error: Exception) {
-                    CallRecordingPlugin.trace(
-                        context,
-                        "receiver",
-                        "Service stop failed: ${error.message ?: error::class.java.simpleName}"
-                    )
-                }
+                CallRecordingPlugin.trace(context, "receiver", "IDLE -> cleared pending call")
             }
 
             else -> {
-                CallRecordingPlugin.trace(context, "receiver", "Received unhandled phone state=${state ?: "null"}")
+                CallRecordingPlugin.trace(context, "receiver", "Unhandled state=${state ?: "null"}")
             }
         }
     }

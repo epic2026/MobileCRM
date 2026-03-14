@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Phone,
@@ -35,6 +35,17 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { format } from 'date-fns';
 import CallRecordingPlayer from '@/components/CallRecordingPlayer';
+
+const formatDateTimeSafe = (value: string | null | undefined, pattern = 'MMM d, yyyy h:mm a') => {
+  if (!value) return 'Unknown time';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Unknown time';
+  try {
+    return format(parsed, pattern);
+  } catch {
+    return 'Unknown time';
+  }
+};
 
 interface LeadDetailSheetProps {
   lead: Lead | null;
@@ -83,6 +94,13 @@ const activityIcons: Record<ActivityType, React.ReactNode> = {
 
 const allStatuses: LeadStatus[] = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
 
+const recordingSourceLabel = (recording: { file_path: string; transcription: string | null }) => {
+  if (recording.file_path.includes('/system_') || recording.transcription?.startsWith('Imported from device recorder')) {
+    return 'Device Recorder';
+  }
+  return 'App Recorder';
+};
+
 const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusChange }: LeadDetailSheetProps) => {
   const { tasks, createTask } = useLeadTasks(lead?.id ?? null);
   const { activities, createActivity } = useLeadActivities(lead?.id ?? null);
@@ -92,6 +110,43 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
   const [isAddingActivity, setIsAddingActivity] = useState(false);
   const [taskForm, setTaskForm] = useState({ title: '', description: '', due_date: '' });
   const [activityForm, setActivityForm] = useState({ type: 'note' as ActivityType, title: '', description: '' });
+
+  const recordingsByActivityId = useMemo(() => {
+    if (!lead) return new Map<string, (typeof recordings)[number]>();
+
+    const map = new Map<string, (typeof recordings)[number]>();
+    const usedRecordingIds = new Set<string>();
+    const sortedRecordings = [...recordings].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+
+    for (const activity of activities) {
+      if (activity.type !== 'call') continue;
+
+      const activityTs = new Date(activity.created_at).getTime();
+      let bestMatch: (typeof recordings)[number] | null = null;
+      let bestDiff = Number.MAX_SAFE_INTEGER;
+
+      for (const recording of sortedRecordings) {
+        if (usedRecordingIds.has(recording.id)) continue;
+
+        const recordingTs = new Date(recording.created_at).getTime();
+        const diff = Math.abs(recordingTs - activityTs);
+
+        if (diff <= 45 * 60 * 1000 && diff < bestDiff) {
+          bestMatch = recording;
+          bestDiff = diff;
+        }
+      }
+
+      if (bestMatch) {
+        map.set(activity.id, bestMatch);
+        usedRecordingIds.add(bestMatch.id);
+      }
+    }
+
+    return map;
+  }, [lead, activities, recordings]);
 
   if (!lead) return null;
 
@@ -201,7 +256,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent side="bottom" className="h-[90%] bg-background rounded-t-3xl p-0 overflow-hidden">
+      <SheetContent side="bottom" className="h-[90%] bg-background rounded-t-3xl p-0 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-6 pb-4 border-b border-border">
           <div className="flex items-center gap-4">
@@ -281,8 +336,8 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
         </div>
 
         {/* Content Tabs */}
-        <div className="flex-1 overflow-auto">
-          <Tabs defaultValue="activity" className="w-full">
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <Tabs defaultValue="activity" className="w-full h-full flex flex-col">
             <TabsList className="w-full justify-start px-6 pt-4 bg-transparent">
               <TabsTrigger value="activity" className="text-sm">
                 Activity
@@ -296,7 +351,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
             </TabsList>
 
             {/* Activity Tab */}
-            <TabsContent value="activity" className="px-6 pb-6">
+            <TabsContent value="activity" className="px-6 pb-6 flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-foreground">Activity History</h3>
                 <Button
@@ -356,39 +411,8 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                 )}
               </AnimatePresence>
 
-              {/* Call Recordings Section */}
-              {recordings.length > 0 && (
-                <div className="mb-4">
-                  <h4 className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
-                    <Volume2 className="w-3 h-3" />
-                    Call Recordings ({recordings.length})
-                  </h4>
-                  <div className="space-y-3">
-                    {recordings.map((recording, index) => (
-                      <motion.div
-                        key={recording.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.05 }}
-                        className="p-3 glass-card"
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-6 h-6 rounded-full bg-success/20 flex items-center justify-center">
-                            <Phone className="w-3 h-3 text-success" />
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {format(new Date(recording.created_at), 'MMM d, yyyy h:mm a')}
-                          </p>
-                        </div>
-                        <CallRecordingPlayer recording={recording} />
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-3">
-                {activities.length === 0 && recordings.length === 0 ? (
+              <div className="space-y-3 flex-1 min-h-0 overflow-y-auto pr-1">
+                {activities.length === 0 ? (
                   <p className="text-center py-8 text-muted-foreground">No activities yet</p>
                 ) : (
                   activities.map((activity, index) => (
@@ -397,20 +421,37 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.05 }}
-                      className="flex gap-3 p-3 glass-card"
+                      className="p-3 glass-card"
                     >
-                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                        {activityIcons[activity.type as ActivityType] || <Activity className="w-4 h-4" />}
+                      <div className="flex gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">
+                          {activityIcons[activity.type as ActivityType] || <Activity className="w-4 h-4" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">{activity.title}</p>
+                          {activity.description && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{activity.description}</p>
+                          )}
+                          <p className="text-[10px] text-muted-foreground/70 mt-1">
+                            {formatDateTimeSafe(activity.created_at)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground">{activity.title}</p>
-                        {activity.description && (
-                          <p className="text-xs text-muted-foreground mt-0.5">{activity.description}</p>
-                        )}
-                        <p className="text-[10px] text-muted-foreground/70 mt-1">
-                          {format(new Date(activity.created_at), 'MMM d, yyyy h:mm a')}
-                        </p>
-                      </div>
+
+                      {activity.type === 'call' && recordingsByActivityId.get(activity.id) && (
+                        <div className="mt-3 rounded-lg border border-border/60 bg-background/40 p-2.5">
+                          <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                            <Volume2 className="w-3 h-3" />
+                            Call Recording
+                            </div>
+                            <Badge variant="secondary" className="text-[10px]">
+                              {recordingSourceLabel(recordingsByActivityId.get(activity.id)!)}
+                            </Badge>
+                          </div>
+                          <CallRecordingPlayer recording={recordingsByActivityId.get(activity.id)!} compact />
+                        </div>
+                      )}
                     </motion.div>
                   ))
                 )}
@@ -484,7 +525,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                           {task.due_date && (
                             <p className="text-[10px] text-muted-foreground/70 mt-1 flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              Due: {format(new Date(task.due_date), 'MMM d, yyyy h:mm a')}
+                              Due: {formatDateTimeSafe(task.due_date)}
                             </p>
                           )}
                         </div>

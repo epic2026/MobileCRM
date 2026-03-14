@@ -34,6 +34,8 @@ export interface CallRecordingServicePlugin {
   startService(): Promise<{ status: string; message: string }>;
   stopService(): Promise<{ status: string; message: string }>;
   isServiceRunning(): Promise<{ running: boolean }>;
+  getSpeakerAssistEnabled(): Promise<{ enabled: boolean }>;
+  setSpeakerAssistEnabled(options: { enabled: boolean }): Promise<{ enabled: boolean }>;
   getRecordingFile(options: { filePath: string }): Promise<{
     filePath: string;
     fileName: string;
@@ -51,16 +53,37 @@ export interface CallRecordingServicePlugin {
       lastModified: number;
     }>;
   }>;
+  requestMediaAudioPermission(): Promise<{ mediaAudio: 'granted' | 'denied' }>;
+  checkMediaAudioPermission(): Promise<{ mediaAudio: 'granted' | 'denied' }>;
+  listSystemRecordings(): Promise<{
+    recordings: Array<{
+      contentUri: string;
+      fileName: string;
+      size: number;
+      duration: number;
+      lastModified: number;
+      relativePath: string;
+    }>;
+  }>;
+  getSystemRecordingFile(options: { contentUri: string }): Promise<{
+    contentUri: string;
+    fileName: string;
+    size: number;
+    base64: string;
+    mimeType: string;
+  }>;
   requestRecordingPermissions(): Promise<{
     microphone: 'granted' | 'denied';
     phoneState: 'granted' | 'denied';
     callLog: 'granted' | 'denied';
+    mediaAudio?: 'granted' | 'denied';
     allGranted: boolean;
   }>;
   checkRecordingPermissions(): Promise<{
     microphone: 'granted' | 'denied';
     phoneState: 'granted' | 'denied';
     callLog: 'granted' | 'denied';
+    mediaAudio?: 'granted' | 'denied';
     allGranted: boolean;
   }>;
   getDebugTrace(): Promise<{
@@ -90,6 +113,8 @@ export interface CallRecordingServicePlugin {
       recorded: boolean;
       duration?: number;
       filePath?: string;
+      audioSource?: number;
+      audioSourceName?: string;
     }) => void
   ): Promise<{ remove: () => void }>;
   
@@ -101,6 +126,8 @@ export interface CallRecordingServicePlugin {
       phoneNumber: string;
       callType: string;
       timestamp: number;
+      audioSource?: number;
+      audioSourceName?: string;
     }) => void
   ): Promise<{ remove: () => void }>;
   

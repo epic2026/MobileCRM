@@ -1,9 +1,13 @@
 package com.lovable.mobilecrmwithsimcalls
 
 import android.Manifest
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -16,7 +20,8 @@ import java.io.File
     permissions = [
         Permission(alias = "mic", strings = [Manifest.permission.RECORD_AUDIO]),
         Permission(alias = "phone", strings = [Manifest.permission.READ_PHONE_STATE]),
-        Permission(alias = "callLog", strings = [Manifest.permission.READ_CALL_LOG])
+        Permission(alias = "callLog", strings = [Manifest.permission.READ_CALL_LOG]),
+        Permission(alias = "mediaAudio", strings = [Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.READ_EXTERNAL_STORAGE])
     ]
 )
 class CallRecordingPlugin : Plugin() {
@@ -55,6 +60,24 @@ class CallRecordingPlugin : Plugin() {
     fun startService(call: PluginCall) {
         CallRecordingState.setAutoRecordingEnabled(context, true)
         trace(context, "plugin", "Auto call recording enabled from JS")
+
+        // Start the foreground service RIGHT NOW while the app is in the foreground.
+        // This is the only window where startForegroundService() is permitted on
+        // Android 12+.  The service then registers its own TelephonyCallback so it
+        // can detect and record calls even after the app is backgrounded, with no
+        // further startForegroundService() calls required.
+        try {
+            val serviceIntent = Intent(context, CallRecordingService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+            trace(context, "plugin", "Foreground service start requested while app is in foreground")
+        } catch (e: Exception) {
+            trace(context, "plugin", "Service start failed from plugin: ${e.message}")
+        }
+
         call.resolve(
             JSObject()
                 .put("status", "started")
@@ -88,6 +111,26 @@ class CallRecordingPlugin : Plugin() {
                 .put("running", running)
                 .put("enabled", enabled)
         )
+    }
+
+    @PluginMethod
+    fun getSpeakerAssistEnabled(call: PluginCall) {
+        val enabled = CallRecordingState.isSpeakerAssistEnabled(context)
+        trace(context, "plugin", "Speaker assist status -> $enabled")
+        call.resolve(JSObject().put("enabled", enabled))
+    }
+
+    @PluginMethod
+    fun setSpeakerAssistEnabled(call: PluginCall) {
+        val enabled = call.getBoolean("enabled")
+        if (enabled == null) {
+            call.reject("enabled is required")
+            return
+        }
+
+        CallRecordingState.setSpeakerAssistEnabled(context, enabled)
+        trace(context, "plugin", "Speaker assist set -> $enabled")
+        call.resolve(JSObject().put("enabled", enabled))
     }
 
     @PluginMethod
@@ -196,15 +239,156 @@ class CallRecordingPlugin : Plugin() {
         call.resolve(JSObject().put("recordings", recordings))
     }
 
+    @PluginMethod
+    fun requestMediaAudioPermission(call: PluginCall) {
+        if (hasMediaAudioPermission()) {
+            call.resolve(JSObject().put("mediaAudio", "granted"))
+            return
+        }
+        requestPermissionForAlias("mediaAudio", call, "mediaAudioPermissionCallback")
+    }
+
+    @PluginMethod
+    fun checkMediaAudioPermission(call: PluginCall) {
+        call.resolve(JSObject().put("mediaAudio", mediaAudioPermissionStatus()))
+    }
+
+    @PermissionCallback
+    private fun mediaAudioPermissionCallback(call: PluginCall) {
+        call.resolve(JSObject().put("mediaAudio", mediaAudioPermissionStatus()))
+    }
+
+    @PluginMethod
+    fun listSystemRecordings(call: PluginCall) {
+        if (!hasMediaAudioPermission()) {
+            call.reject("Media audio permission is required")
+            return
+        }
+
+        trace(context, "plugin", "Listing system recordings from MediaStore")
+
+        val likelyRecordings = mutableListOf<JSObject>()
+        val fallbackRecordings = mutableListOf<JSObject>()
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.DATE_MODIFIED,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.RELATIVE_PATH
+        )
+
+        val sortOrder = "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
+        var scannedCount = 0
+
+        context.contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            null,
+            null,
+            sortOrder
+        )?.use { cursor ->
+            val idIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val nameIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+            val sizeIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+            val modifiedIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+            val durationIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val pathIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH)
+
+            while (cursor.moveToNext()) {
+                scannedCount += 1
+                val id = cursor.getLong(idIdx)
+                val name = cursor.getString(nameIdx) ?: "recording_$id"
+                val size = cursor.getLong(sizeIdx)
+                val modifiedSeconds = cursor.getLong(modifiedIdx)
+                val durationMs = cursor.getLong(durationIdx)
+                val relativePath = cursor.getString(pathIdx) ?: ""
+
+                if (size <= 0L) continue
+
+                val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                val item = JSObject()
+                    .put("contentUri", contentUri.toString())
+                    .put("fileName", name)
+                    .put("size", size)
+                    .put("duration", durationMs / 1000)
+                    .put("lastModified", modifiedSeconds * 1000)
+                    .put("relativePath", relativePath)
+
+                if (isLikelyCallRecording(name, relativePath)) {
+                    likelyRecordings.add(item)
+                } else if (durationMs >= 10_000) {
+                    // Fallback: include recent long-form audio files in case OEM naming
+                    // does not include "call"/"record" patterns.
+                    fallbackRecordings.add(item)
+                }
+            }
+        }
+
+        val output = JSArray()
+        val chosen = if (likelyRecordings.isNotEmpty()) {
+            likelyRecordings
+        } else {
+            fallbackRecordings.take(50)
+        }
+
+        chosen.forEach { output.put(it) }
+        trace(
+            context,
+            "plugin",
+            "System recording scan complete: scanned=$scannedCount likely=${likelyRecordings.size} fallback=${fallbackRecordings.size} returned=${chosen.size}"
+        )
+
+        call.resolve(JSObject().put("recordings", output))
+    }
+
+    @PluginMethod
+    fun getSystemRecordingFile(call: PluginCall) {
+        if (!hasMediaAudioPermission()) {
+            call.reject("Media audio permission is required")
+            return
+        }
+
+        val contentUriString = call.getString("contentUri")
+        if (contentUriString.isNullOrBlank()) {
+            call.reject("contentUri is required")
+            return
+        }
+
+        try {
+            val uri = Uri.parse(contentUriString)
+            val mimeType = context.contentResolver.getType(uri) ?: "audio/mp4"
+            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            if (bytes == null) {
+                call.reject("Unable to read system recording")
+                return
+            }
+
+            val name = uri.lastPathSegment ?: "system_call_recording"
+            call.resolve(
+                JSObject()
+                    .put("contentUri", contentUriString)
+                    .put("fileName", name)
+                    .put("size", bytes.size)
+                    .put("mimeType", mimeType)
+                    .put("base64", Base64.encodeToString(bytes, Base64.NO_WRAP))
+            )
+        } catch (e: Exception) {
+            call.reject("Failed to read system recording: ${e.message}")
+        }
+    }
+
     private fun buildPermissionStatus(): JSObject {
         val microphoneGranted = permissionGranted(Manifest.permission.RECORD_AUDIO)
         val phoneGranted = permissionGranted(Manifest.permission.READ_PHONE_STATE)
         val callLogGranted = permissionGranted(Manifest.permission.READ_CALL_LOG)
+        val mediaAudioGranted = hasMediaAudioPermission()
 
         return JSObject()
             .put("microphone", if (microphoneGranted) "granted" else "denied")
             .put("phoneState", if (phoneGranted) "granted" else "denied")
             .put("callLog", if (callLogGranted) "granted" else "denied")
+            .put("mediaAudio", if (mediaAudioGranted) "granted" else "denied")
             .put("allGranted", microphoneGranted && phoneGranted && callLogGranted)
     }
 
@@ -215,6 +399,25 @@ class CallRecordingPlugin : Plugin() {
         permissionGranted(Manifest.permission.RECORD_AUDIO) &&
             permissionGranted(Manifest.permission.READ_PHONE_STATE) &&
             permissionGranted(Manifest.permission.READ_CALL_LOG)
+
+    private fun mediaAudioPermissionStatus(): String = if (hasMediaAudioPermission()) "granted" else "denied"
+
+    private fun hasMediaAudioPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionGranted(Manifest.permission.READ_MEDIA_AUDIO)
+        } else {
+            permissionGranted(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    private fun isLikelyCallRecording(fileName: String, relativePath: String): Boolean {
+        val name = fileName.lowercase()
+        val path = relativePath.lowercase()
+        return name.contains("call") ||
+            name.contains("record") ||
+            path.contains("call") ||
+            path.contains("record")
+    }
 
     private fun recordingDirectory(): File =
         File(context.getExternalFilesDir(null), "recordings").apply {

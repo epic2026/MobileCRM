@@ -5,6 +5,7 @@ import android.content.Context
 object CallRecordingState {
     private const val PREFS_NAME = "call_recording_prefs"
     private const val KEY_ENABLED = "auto_recording_enabled"
+    private const val KEY_SPEAKER_ASSIST = "speaker_assist_enabled"
     private const val KEY_PENDING_NUMBER = "pending_number"
     private const val KEY_PENDING_TYPE = "pending_type"
     private const val KEY_DEBUG_TRACE = "debug_trace"
@@ -33,6 +34,13 @@ object CallRecordingState {
 
     fun setAutoRecordingEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
+    }
+
+    fun isSpeakerAssistEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SPEAKER_ASSIST, false)
+
+    fun setSpeakerAssistEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SPEAKER_ASSIST, enabled).apply()
     }
 
     fun setPendingCall(context: Context, phoneNumber: String?, callType: String?) {

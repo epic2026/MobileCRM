@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
-import { Search, Plus, Phone, Edit2, Trash2, MessageCircle, ChevronDown, GripVertical } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState } from 'react';
+import { Search, Plus, Phone, Edit2, Trash2, MessageCircle, Building2, IndianRupee } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useLeads, Lead, LeadStatus } from '@/hooks/useLeads';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
@@ -22,7 +22,6 @@ import {
 } from '@/components/ui/sheet';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import LeadDetailSheet from '@/components/LeadDetailSheet';
 
 const allStatuses: LeadStatus[] = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
@@ -33,13 +32,13 @@ interface LeadsPanelProps {
 }
 
 const statusColors: Record<LeadStatus, string> = {
-  new: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  contacted: 'bg-primary/20 text-primary border-primary/30',
-  qualified: 'bg-accent/20 text-accent border-accent/30',
-  proposal: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  negotiation: 'bg-warning/20 text-warning border-warning/30',
-  won: 'bg-success/20 text-success border-success/30',
-  lost: 'bg-destructive/20 text-destructive border-destructive/30',
+  new: 'bg-blue-500/15 text-blue-600 border-blue-500/30',
+  contacted: 'bg-cyan-500/15 text-cyan-600 border-cyan-500/30',
+  qualified: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30',
+  proposal: 'bg-violet-500/15 text-violet-600 border-violet-500/30',
+  negotiation: 'bg-amber-500/15 text-amber-600 border-amber-500/30',
+  won: 'bg-green-500/15 text-green-600 border-green-500/30',
+  lost: 'bg-rose-500/15 text-rose-600 border-rose-500/30',
 };
 
 const statusLabels: Record<LeadStatus, string> = {
@@ -52,24 +51,13 @@ const statusLabels: Record<LeadStatus, string> = {
   lost: 'Lost',
 };
 
-const columnColors: Record<LeadStatus, string> = {
-  new: 'border-t-blue-500',
-  contacted: 'border-t-primary',
-  qualified: 'border-t-accent',
-  proposal: 'border-t-purple-500',
-  negotiation: 'border-t-warning',
-  won: 'border-t-success',
-  lost: 'border-t-destructive',
-};
-
 const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
   const { leads, isLoading, createLead, updateLead, deleteLead } = useLeads();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState<'all' | LeadStatus>('all');
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [draggedLead, setDraggedLead] = useState<Lead | null>(null);
-  const [dragOverColumn, setDragOverColumn] = useState<LeadStatus | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -143,87 +131,47 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
       (lead.company?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
       lead.phone.includes(searchQuery);
 
-    return matchesSearch;
+    const matchesStatus = selectedStatus === 'all' || lead.status === selectedStatus;
+
+    return matchesSearch && matchesStatus;
   });
 
   const getLeadsByStatus = (status: LeadStatus) => {
     return filteredLeads.filter((lead) => lead.status === status);
   };
 
-  const stats = {
-    total: leads.length,
-    new: leads.filter((l) => l.status === 'new').length,
-    qualified: leads.filter((l) => l.status === 'qualified').length,
-    won: leads.filter((l) => l.status === 'won').length,
-    totalValue: leads.reduce((sum, l) => sum + (l.value || 0), 0),
-  };
-
-  // Drag and drop handlers
-  const handleDragStart = (e: React.DragEvent, lead: Lead) => {
-    setDraggedLead(lead);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', lead.id);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedLead(null);
-    setDragOverColumn(null);
-  };
-
-  const handleDragOver = (e: React.DragEvent, status: LeadStatus) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (dragOverColumn !== status) {
-      setDragOverColumn(status);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = e.clientX;
-    const y = e.clientY;
-    
-    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-      setDragOverColumn(null);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent, newStatus: LeadStatus) => {
-    e.preventDefault();
-    if (draggedLead && draggedLead.status !== newStatus) {
-      updateLead.mutate({ id: draggedLead.id, status: newStatus });
-    }
-    setDraggedLead(null);
-    setDragOverColumn(null);
-  };
-
-  // Touch handlers for mobile
-  const [touchedLead, setTouchedLead] = useState<Lead | null>(null);
-
-  const handleTouchStart = (lead: Lead) => {
-    setTouchedLead(lead);
-  };
-
   const handleStatusChange = (leadId: string, newStatus: LeadStatus) => {
     updateLead.mutate({ id: leadId, status: newStatus });
-    setTouchedLead(null);
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      maximumFractionDigits: 0,
+    }).format(value);
   };
 
   return (
-    <div className="pb-20 h-full flex flex-col">
+    <div className="pb-24 h-full flex flex-col overflow-x-hidden">
       {/* Header */}
-      <div className="sticky top-0 bg-background/95 backdrop-blur-xl z-10 px-4 pt-6 pb-4">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Manage Leads</h1>
-            <p className="text-sm text-muted-foreground">{stats.total} total leads</p>
+      <div className="sticky top-0 bg-background/95 backdrop-blur-xl z-10 px-4 pt-5 pb-3 border-b border-border/40">
+        {/* Search + Add */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search leads..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 bg-secondary border-border h-11"
+            />
           </div>
           <Sheet open={isAddSheetOpen} onOpenChange={setIsAddSheetOpen}>
             <SheetTrigger asChild>
               <motion.button
                 whileTap={{ scale: 0.95 }}
                 onClick={() => resetForm()}
-                className="w-10 h-10 rounded-full bg-primary flex items-center justify-center glow-primary"
+                className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-primary/25"
               >
                 <Plus className="w-5 h-5 text-primary-foreground" />
               </motion.button>
@@ -324,185 +272,155 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
           </Sheet>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          <div className="glass-card p-3 text-center">
-            <p className="text-lg font-bold text-primary">{stats.new}</p>
-            <p className="text-[10px] text-muted-foreground">New</p>
+        <div className="mt-3 -mx-1 px-1 overflow-x-auto">
+          <div className="flex gap-2 min-w-max">
+            <button
+              onClick={() => setSelectedStatus('all')}
+              className={`px-3 h-8 rounded-full border text-xs font-medium transition-colors ${
+                selectedStatus === 'all'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-card text-muted-foreground border-border'
+              }`}
+            >
+              All ({leads.length})
+            </button>
+            {allStatuses.map((status) => (
+              <button
+                key={status}
+                onClick={() => setSelectedStatus(status)}
+                className={`px-3 h-8 rounded-full border text-xs font-medium transition-colors ${
+                  selectedStatus === status
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-card text-muted-foreground border-border'
+                }`}
+              >
+                {statusLabels[status]} ({leads.filter((lead) => lead.status === status).length})
+              </button>
+            ))}
           </div>
-          <div className="glass-card p-3 text-center">
-            <p className="text-lg font-bold text-accent">{stats.qualified}</p>
-            <p className="text-[10px] text-muted-foreground">Qualified</p>
-          </div>
-          <div className="glass-card p-3 text-center">
-            <p className="text-lg font-bold text-success">{stats.won}</p>
-            <p className="text-[10px] text-muted-foreground">Won</p>
-          </div>
-          <div className="glass-card p-3 text-center">
-            <p className="text-lg font-bold text-foreground">${(stats.totalValue / 1000).toFixed(0)}k</p>
-            <p className="text-[10px] text-muted-foreground">Pipeline</p>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Search leads..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 bg-secondary border-border h-11"
-          />
         </div>
       </div>
 
-      {/* Kanban Board */}
-      <div className="flex-1 overflow-x-auto px-2">
+      {/* Leads List */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
         {isLoading ? (
           <div className="text-center py-12">
             <p className="text-muted-foreground">Loading leads...</p>
           </div>
+        ) : filteredLeads.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+            <p className="text-sm font-medium text-foreground">No leads found</p>
+            <p className="text-xs text-muted-foreground mt-1">Try changing search or status filters.</p>
+          </div>
         ) : (
-          <div className="flex gap-3 pb-4 min-w-max">
-            {allStatuses.map((status) => {
-              const columnLeads = getLeadsByStatus(status);
-              const isOver = dragOverColumn === status;
-              
+          <div className="space-y-3 pb-4">
+            {filteredLeads.map((lead) => {
+              const initials = lead.name
+                .split(' ')
+                .map((n) => n[0])
+                .join('')
+                .toUpperCase()
+                .slice(0, 2);
+
               return (
-                <div
-                  key={status}
-                  className={`w-64 flex-shrink-0 bg-secondary/30 rounded-xl border-t-4 ${columnColors[status]} transition-all ${
-                    isOver ? 'bg-primary/10 ring-2 ring-primary/30' : ''
-                  }`}
-                  onDragOver={(e) => handleDragOver(e, status)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, status)}
+                <motion.div
+                  key={lead.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-2xl border border-border/60 bg-card p-3 shadow-sm"
+                  onClick={() => setSelectedLead(lead)}
                 >
-                  {/* Column Header */}
-                  <div className="p-3 border-b border-border/30">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-sm text-foreground">{statusLabels[status]}</h3>
-                      <Badge variant="secondary" className="text-xs">
-                        {columnLeads.length}
-                      </Badge>
+                  <div className="flex items-start gap-3">
+                    <Avatar className="w-11 h-11 bg-gradient-to-br from-primary to-accent flex-shrink-0">
+                      <AvatarFallback className="bg-transparent text-primary-foreground text-sm font-semibold">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="text-base font-semibold text-foreground truncate">{lead.name}</h3>
+                          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 truncate">
+                            <Building2 className="w-3 h-3" />
+                            {lead.company || 'No company'}
+                          </p>
+                        </div>
+                        <Badge className={`${statusColors[lead.status]} border text-[10px] font-medium`}>
+                          {statusLabels[lead.status]}
+                        </Badge>
+                      </div>
+
+                      <p className="text-sm text-foreground mt-2">{lead.phone}</p>
+
+                      <div className="flex items-center justify-between mt-2">
+                        <p className="text-xs text-muted-foreground">
+                          Updated {new Date(lead.updated_at).toLocaleDateString()}
+                        </p>
+                        {lead.value ? (
+                          <p className="text-sm font-semibold text-foreground flex items-center gap-0.5">
+                            <IndianRupee className="w-3 h-3" />
+                            {formatCurrency(lead.value)}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No value</p>
+                        )}
+                      </div>
+
+                      <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => onCall(lead.phone, lead.name, lead.id)}
+                          className="h-9 px-3 rounded-lg bg-green-500/15 text-green-600 text-xs font-medium flex items-center gap-1.5"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          Call
+                        </button>
+                        <button
+                          onClick={() => onWhatsApp(lead.phone, lead.name, lead.id)}
+                          className="h-9 px-3 rounded-lg bg-emerald-500/15 text-emerald-600 text-xs font-medium flex items-center gap-1.5"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          WhatsApp
+                        </button>
+                        <button
+                          onClick={(e) => handleEdit(lead, e)}
+                          className="h-9 w-9 rounded-lg bg-primary/15 text-primary flex items-center justify-center"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteLead.mutate(lead.id);
+                          }}
+                          className="h-9 w-9 rounded-lg bg-destructive/15 text-destructive flex items-center justify-center"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                        <Select
+                          value={lead.status}
+                          onValueChange={(value: LeadStatus) => {
+                            handleStatusChange(lead.id, value);
+                          }}
+                        >
+                          <SelectTrigger className="h-9 text-xs bg-muted/40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {allStatuses.map((s) => (
+                              <SelectItem key={s} value={s} className="text-xs">
+                                {statusLabels[s]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Column Content */}
-                  <ScrollArea className="h-[calc(100vh-340px)]">
-                    <div className="p-2 space-y-2">
-                      <AnimatePresence>
-                        {columnLeads.map((lead) => {
-                          const initials = lead.name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .join('')
-                            .toUpperCase();
-
-                          return (
-                            <motion.div
-                              key={lead.id}
-                              initial={{ opacity: 0, scale: 0.95 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.95 }}
-                              draggable
-                              onDragStart={(e) => handleDragStart(e as unknown as React.DragEvent, lead)}
-                              onDragEnd={handleDragEnd}
-                              className={`glass-card p-3 cursor-grab active:cursor-grabbing ${
-                                draggedLead?.id === lead.id ? 'opacity-50 ring-2 ring-primary' : ''
-                              }`}
-                              onClick={() => setSelectedLead(lead)}
-                            >
-                              <div className="flex items-start gap-2">
-                                <div className="mt-1 cursor-grab">
-                                  <GripVertical className="w-4 h-4 text-muted-foreground/50" />
-                                </div>
-                                <Avatar className="w-8 h-8 bg-gradient-to-br from-primary to-accent flex-shrink-0">
-                                  <AvatarFallback className="bg-transparent text-primary-foreground text-xs font-semibold">
-                                    {initials}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div className="flex-1 min-w-0">
-                                  <h4 className="font-semibold text-sm text-foreground truncate">{lead.name}</h4>
-                                  <p className="text-xs text-muted-foreground truncate">{lead.company || 'No company'}</p>
-                                  <p className="text-[10px] text-muted-foreground/70">{lead.phone}</p>
-                                  {lead.value && (
-                                    <p className="text-xs font-medium text-success mt-1">${lead.value.toLocaleString()}</p>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Quick Actions */}
-                              <div className="flex gap-1 mt-2 pt-2 border-t border-border/30">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onCall(lead.phone, lead.name, lead.id);
-                                  }}
-                                  className="flex-1 h-7 rounded bg-success/20 flex items-center justify-center"
-                                >
-                                  <Phone className="w-3 h-3 text-success" />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onWhatsApp(lead.phone, lead.name, lead.id);
-                                  }}
-                                  className="flex-1 h-7 rounded bg-green-500/20 flex items-center justify-center"
-                                >
-                                  <MessageCircle className="w-3 h-3 text-green-500" />
-                                </button>
-                                <button
-                                  onClick={(e) => handleEdit(lead, e)}
-                                  className="flex-1 h-7 rounded bg-primary/20 flex items-center justify-center"
-                                >
-                                  <Edit2 className="w-3 h-3 text-primary" />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    deleteLead.mutate(lead.id);
-                                  }}
-                                  className="flex-1 h-7 rounded bg-destructive/20 flex items-center justify-center"
-                                >
-                                  <Trash2 className="w-3 h-3 text-destructive" />
-                                </button>
-                              </div>
-
-                              {/* Mobile: Status Change Dropdown */}
-                              <div className="mt-2 md:hidden">
-                                <Select
-                                  value={lead.status}
-                                  onValueChange={(value: LeadStatus) => {
-                                    handleStatusChange(lead.id, value);
-                                  }}
-                                >
-                                  <SelectTrigger className="h-7 text-xs" onClick={(e) => e.stopPropagation()}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {allStatuses.map((s) => (
-                                      <SelectItem key={s} value={s} className="text-xs">
-                                        {statusLabels[s]}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </motion.div>
-                          );
-                        })}
-                      </AnimatePresence>
-
-                      {columnLeads.length === 0 && (
-                        <div className="text-center py-8 text-muted-foreground text-xs">
-                          No leads
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
-                </div>
+                </motion.div>
               );
             })}
           </div>

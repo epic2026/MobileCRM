@@ -7,9 +7,9 @@ import BottomNav from '@/components/BottomNav';
 import LeadsPanel from '@/components/LeadsPanel';
 import TasksPanel from '@/components/TasksPanel';
 import CallActivity from '@/components/CallActivity';
-import DialPad from '@/components/DialPad';
 import CRMIntegrations from '@/components/CRMIntegrations';
 import SettingsPanel from '@/components/SettingsPanel';
+import CallRecordingStartup from '@/components/CallRecordingStartup';
 import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
@@ -104,8 +104,6 @@ const Index = () => {
         return <TasksPanel />;
       case 'activity':
         return <CallActivity onCall={handleCall} />;
-      case 'dialpad':
-        return <DialPad onCall={(number) => handleCall(number)} />;
       case 'integrations':
         return <CRMIntegrations />;
       case 'settings':
@@ -117,6 +115,7 @@ const Index = () => {
 
   return (
     <MobileLayout>
+      <CallRecordingStartup />
       {renderContent()}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
     </MobileLayout>

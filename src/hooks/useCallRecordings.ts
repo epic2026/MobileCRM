@@ -81,7 +81,11 @@ export const useCallRecordings = (leadId?: string | null) => {
       toast({ title: 'Analysis Complete', description: 'Call has been analyzed with AI insights' });
     },
     onError: (error) => {
-      toast({ title: 'Analysis Failed', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Analysis Skipped',
+        description: 'Recording saved, but AI analysis is currently unavailable.',
+      });
+      console.warn('AI analysis failed:', error.message);
     },
   });
 
@@ -89,9 +93,18 @@ export const useCallRecordings = (leadId?: string | null) => {
     if (!user) return null;
     
     const filePath = `${user.id}/${filename}`;
+    const uploadFile = new File([file], filename, {
+      type: file.type || 'audio/mp4',
+      lastModified: Date.now(),
+    });
+
     const { error } = await supabase.storage
       .from('call-recordings')
-      .upload(filePath, file, { upsert: true });
+      .upload(filePath, uploadFile, {
+        upsert: true,
+        contentType: uploadFile.type,
+        cacheControl: '3600',
+      });
     
     if (error) {
       console.error('Upload error:', error);
