@@ -13,7 +13,7 @@ export interface CallRecording {
   duration: number;
   created_at: string;
   ai_summary: string | null;
-  ai_next_actions: { action: string; priority: string; timeframe: string }[] | null;
+  ai_next_actions: (string | { action: string; priority?: string; timeframe?: string })[] | null;
   transcription: string | null;
   processed_at: string | null;
 }
@@ -22,6 +22,30 @@ export const useCallRecordings = (leadId?: string | null) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const extractFunctionErrorMessage = async (error: unknown) => {
+    const maybeError = error as { message?: string; context?: Response };
+
+    if (maybeError?.context) {
+      try {
+        const body = await maybeError.context.clone().json();
+        if (body?.error) {
+          return String(body.error);
+        }
+      } catch {
+        try {
+          const text = await maybeError.context.clone().text();
+          if (text) {
+            return text;
+          }
+        } catch {
+          // Fall back to generic error message below.
+        }
+      }
+    }
+
+    return maybeError?.message || 'Unknown error';
+  };
 
   const { data: recordings = [], isLoading, error } = useQuery({
     queryKey: ['call_recordings', leadId, user?.id],
@@ -69,11 +93,20 @@ export const useCallRecordings = (leadId?: string | null) => {
       transcription?: string;
       callDetails: { contactName?: string; duration: number; callType: string };
     }) => {
+      const anonToken = import.meta.env.VITE_SUPABASE_ANON_KEY!;
+
       const { data, error } = await supabase.functions.invoke('analyze-call', {
+        headers: {
+          Authorization: `Bearer ${anonToken}`,
+          apikey: anonToken,
+        },
         body: { recordingId, transcription, callDetails }
       });
       
-      if (error) throw error;
+      if (error) {
+        const detailedMessage = await extractFunctionErrorMessage(error);
+        throw new Error(detailedMessage);
+      }
       return data;
     },
     onSuccess: () => {
@@ -81,9 +114,10 @@ export const useCallRecordings = (leadId?: string | null) => {
       toast({ title: 'Analysis Complete', description: 'Call has been analyzed with AI insights' });
     },
     onError: (error) => {
+      queryClient.invalidateQueries({ queryKey: ['call_recordings'] });
       toast({
         title: 'Analysis Skipped',
-        description: 'Recording saved, but AI analysis is currently unavailable.',
+        description: error.message || 'Recording saved, but AI analysis is currently unavailable.',
       });
       console.warn('AI analysis failed:', error.message);
     },

@@ -298,9 +298,7 @@ export const CallRecordingToggle = () => {
       ? fallbackLeadId
       : recording.matchedLeadId || fallbackLeadId;
 
-    if (recording.confidence === 'low' && !leadId) {
-      return false;
-    }
+    const importingWithoutLead = recording.confidence === 'low' && !leadId;
 
     setImportingContentUri(recording.contentUri);
     try {
@@ -317,6 +315,10 @@ export const CallRecordingToggle = () => {
 
       if (dedupeError) throw dedupeError;
       if (existingRows && existingRows.length > 0) {
+        toast({
+          title: 'Already imported',
+          description: 'This recording was already imported earlier.',
+        });
         setSystemRecordings((prev) => prev.filter((r) => r.contentUri !== recording.contentUri));
         return false;
       }
@@ -368,7 +370,7 @@ export const CallRecordingToggle = () => {
         user_id: user.id,
         ai_summary: null,
         ai_next_actions: null,
-        transcription: `Imported from device recorder (${recording.fileName})`,
+        transcription: null,
       });
 
       if (leadId) {
@@ -393,6 +395,13 @@ export const CallRecordingToggle = () => {
           duration: recording.duration || 0,
           callType: 'unknown',
         },
+      });
+
+      toast({
+        title: 'Recording imported',
+        description: importingWithoutLead
+          ? 'Imported successfully without lead assignment. You can link it later.'
+          : 'Imported and linked successfully.',
       });
 
       setSystemRecordings((prev) => prev.filter((r) => r.contentUri !== recording.contentUri));

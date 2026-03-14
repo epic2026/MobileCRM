@@ -224,7 +224,7 @@ const CallRecordingStartup = () => {
       user_id: user.id,
       ai_summary: null,
       ai_next_actions: null,
-      transcription: `Imported from device recorder (${recording.fileName})`,
+      transcription: null,
     });
 
     if (leadId) {

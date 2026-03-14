@@ -315,7 +315,7 @@ class CallRecordingPlugin : Plugin() {
                     .put("lastModified", modifiedSeconds * 1000)
                     .put("relativePath", relativePath)
 
-                if (isLikelyCallRecording(name, relativePath)) {
+                if (isLikelyCallRecording(name, relativePath, durationMs)) {
                     likelyRecordings.add(item)
                 } else if (durationMs >= 10_000) {
                     // Fallback: include recent long-form audio files in case OEM naming
@@ -410,13 +410,51 @@ class CallRecordingPlugin : Plugin() {
         }
     }
 
-    private fun isLikelyCallRecording(fileName: String, relativePath: String): Boolean {
+    private fun isLikelyCallRecording(fileName: String, relativePath: String, durationMs: Long): Boolean {
         val name = fileName.lowercase()
         val path = relativePath.lowercase()
-        return name.contains("call") ||
-            name.contains("record") ||
-            path.contains("call") ||
-            path.contains("record")
+        val combined = "$path/$name"
+
+        val strongPathMatches = listOf(
+            "callrecord",
+            "call_record",
+            "call recording",
+            "call recordings",
+            "call records",
+            "sound_recorder/call",
+            "sound recorder/call",
+            "sound_recorder/call_rec",
+            "call_rec",
+            "recordings/call",
+            "recording/call",
+            "miui/sound_recorder",
+            "miui/sound recorder",
+            "phone record",
+            "voice recorder/call"
+        )
+
+        val keywordMatches = listOf(
+            "call",
+            "record",
+            "rec",
+            "voice",
+            "phone"
+        )
+
+        val hasStrongPathMatch = strongPathMatches.any { combined.contains(it) }
+        val hasKeywordMatch = keywordMatches.any { name.contains(it) || path.contains(it) }
+        val hasPhoneNumberPattern = Regex("""(?:\+?\d[\d\s\-()]{8,}\d)|(?:\d{10,})""").containsMatchIn(fileName)
+        val hasTimestampStyleName = Regex("""\d{4}[-_]?\d{2}[-_]?\d{2}[-_ ]?\d{2}[-_]?\d{2}[-_]?\d{2}""").containsMatchIn(fileName)
+        val durationLooksLikeCall = durationMs in 10_000..10_800_000
+
+        val score =
+            (if (hasStrongPathMatch) 4 else 0) +
+            (if (hasKeywordMatch) 2 else 0) +
+            (if (hasPhoneNumberPattern) 2 else 0) +
+            (if (hasTimestampStyleName) 1 else 0) +
+            (if (durationLooksLikeCall) 1 else 0)
+
+        return score >= 4
     }
 
     private fun recordingDirectory(): File =
