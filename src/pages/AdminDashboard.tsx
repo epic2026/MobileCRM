@@ -27,6 +27,16 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -43,10 +53,12 @@ import {
   BarChart3,
   UserPlus,
   Mail,
+  Pencil,
+  Trash2,
+  Upload,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
-import UserRoleManagement from '@/components/admin/UserRoleManagement';
 import LeadAssignment from '@/components/admin/LeadAssignment';
 
 interface Profile {
@@ -74,12 +86,22 @@ const AdminDashboard = () => {
   const queryClient = useQueryClient();
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<'users' | 'leads' | 'reports'>('users');
+  const [deleteConfirm, setDeleteConfirm] = useState<{ userId: string; email: string } | null>(null);
   const [newUserData, setNewUserData] = useState({
     email: '',
     password: '',
     fullName: '',
     role: 'sales' as 'admin' | 'sales',
+  });
+  const [editUserData, setEditUserData] = useState({
+    id: '',
+    email: '',
+    fullName: '',
+    role: 'sales' as 'admin' | 'sales',
+    isActive: true,
   });
 
   useEffect(() => {
@@ -196,9 +218,96 @@ const AdminDashboard = () => {
     },
   });
 
+  const updateUser = useMutation({
+    mutationFn: async (data: { id: string; fullName: string; role: 'admin' | 'sales'; isActive: boolean }) => {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ full_name: data.fullName, is_active: data.isActive })
+        .eq('id', data.id);
+
+      if (profileError) throw profileError;
+
+      const { data: existingRole, error: roleFetchError } = await supabase
+        .from('user_roles')
+        .select('id')
+        .eq('user_id', data.id)
+        .maybeSingle();
+
+      if (roleFetchError) throw roleFetchError;
+
+      if (existingRole) {
+        const { error: roleUpdateError } = await supabase
+          .from('user_roles')
+          .update({ role: data.role })
+          .eq('user_id', data.id);
+
+        if (roleUpdateError) throw roleUpdateError;
+      } else {
+        const { error: roleInsertError } = await supabase
+          .from('user_roles')
+          .insert({ user_id: data.id, role: data.role });
+
+        if (roleInsertError) throw roleInsertError;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: 'User Updated', description: 'User details have been saved.' });
+      setIsEditDialogOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Failed to Update User',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const removeUserAccess = useMutation({
+    mutationFn: async ({ userId }: { userId: string }) => {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ is_active: false })
+        .eq('id', userId);
+
+      if (profileError) throw profileError;
+
+      const { error: roleDeleteError } = await supabase
+        .from('user_roles')
+        .delete()
+        .eq('user_id', userId);
+
+      if (roleDeleteError) throw roleDeleteError;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: 'User Removed', description: 'User access has been removed and the account is inactive.' });
+      setDeleteConfirm(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Failed to Remove User',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleSignOut = async () => {
     await signOut();
     navigate('/admin/login');
+  };
+
+  const handleEditUser = (selectedUser: UserWithRole) => {
+    setEditUserData({
+      id: selectedUser.id,
+      email: selectedUser.email,
+      fullName: selectedUser.full_name || '',
+      role: selectedUser.role || 'sales',
+      isActive: selectedUser.is_active,
+    });
+    setIsEditDialogOpen(true);
   };
 
   if (isLoading || usersLoading) {
@@ -239,7 +348,7 @@ const AdminDashboard = () => {
               <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="min-w-0">
                   <CardTitle>Sales Users</CardTitle>
-                  <CardDescription>Manage your sales team members</CardDescription>
+                  <CardDescription>Manage users, roles, and access in one place</CardDescription>
                 </div>
                 <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
                   <DialogTrigger asChild>
@@ -363,6 +472,21 @@ const AdminDashboard = () => {
                             />
                           )}
                         </div>
+                        <div className="flex items-center gap-2 pt-1">
+                          <Button size="sm" variant="outline" className="flex-1" onClick={() => handleEditUser(u)}>
+                            <Pencil className="w-3 h-3 mr-2" />
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive border-destructive/30 hover:text-destructive"
+                            onClick={() => setDeleteConfirm({ userId: u.id, email: u.email })}
+                            disabled={u.id === user?.id}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           Created {format(new Date(u.created_at), 'MMM d, yyyy')}
                         </p>
@@ -382,6 +506,7 @@ const AdminDashboard = () => {
                       <TableHead>Email</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Manage Role</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
@@ -415,23 +540,55 @@ const AdminDashboard = () => {
                           )}
                         </TableCell>
                         <TableCell>
+                          {u.id === user?.id ? (
+                            <span className="text-sm text-muted-foreground">Current user</span>
+                          ) : (
+                            <Select
+                              value={u.role || 'sales'}
+                              onValueChange={(value: 'admin' | 'sales') =>
+                                updateUser.mutate({
+                                  id: u.id,
+                                  fullName: u.full_name || '',
+                                  role: value,
+                                  isActive: u.is_active,
+                                })
+                              }
+                            >
+                              <SelectTrigger className="w-28">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sales">Sales</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           {format(new Date(u.created_at), 'MMM d, yyyy')}
                         </TableCell>
                         <TableCell>
-                          {u.role !== 'admin' && (
-                            <Switch
-                              checked={u.is_active}
-                              onCheckedChange={(checked) =>
-                                toggleUserStatus.mutate({ userId: u.id, isActive: checked })
-                              }
-                            />
-                          )}
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleEditUser(u)}>
+                              <Pencil className="w-3 h-3 mr-2" />
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-destructive border-destructive/30 hover:text-destructive"
+                              onClick={() => setDeleteConfirm({ userId: u.id, email: u.email })}
+                              disabled={u.id === user?.id}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
                     {users.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        <TableCell colSpan={7} className="text-center text-muted-foreground">
                           No users found
                         </TableCell>
                       </TableRow>
@@ -441,31 +598,35 @@ const AdminDashboard = () => {
                 </div>
               </CardContent>
             </Card>
-            <div className="mt-4">
-              <UserRoleManagement users={users} currentUserId={user?.id || ''} />
-            </div>
           </>
         )}
 
         {activeSection === 'leads' && (
           <div className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle>Lead Assignment</CardTitle>
-                <CardDescription>Assign leads to sales users and track ownership.</CardDescription>
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <CardTitle>Lead Assignment</CardTitle>
+                  <CardDescription>Assign leads to sales users and track ownership.</CardDescription>
+                </div>
+                <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline" className="w-full sm:w-auto">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Import Leads
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+                    <DialogHeader>
+                      <DialogTitle>Import Leads</DialogTitle>
+                      <DialogDescription>Upload an Excel or CSV file and import leads for assignment.</DialogDescription>
+                    </DialogHeader>
+                    <LeadImport />
+                  </DialogContent>
+                </Dialog>
               </CardHeader>
               <CardContent>
                 <LeadAssignment />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Import Leads</CardTitle>
-                <CardDescription>Upload and map new leads for distribution.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <LeadImport />
               </CardContent>
             </Card>
           </div>
@@ -553,6 +714,93 @@ const AdminDashboard = () => {
           </button>
         </div>
       </nav>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>Update user details and access settings.</DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              updateUser.mutate({
+                id: editUserData.id,
+                fullName: editUserData.fullName,
+                role: editUserData.role,
+                isActive: editUserData.isActive,
+              });
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input value={editUserData.email} disabled />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editFullName">Full Name</Label>
+              <Input
+                id="editFullName"
+                value={editUserData.fullName}
+                onChange={(e) => setEditUserData((prev) => ({ ...prev, fullName: e.target.value }))}
+                placeholder="Full name"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editRole">Role</Label>
+              <Select
+                value={editUserData.role}
+                onValueChange={(value: 'admin' | 'sales') => setEditUserData((prev) => ({ ...prev, role: value }))}
+                disabled={editUserData.id === user?.id}
+              >
+                <SelectTrigger id="editRole">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sales">Sales</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Active User</p>
+                <p className="text-xs text-muted-foreground">Inactive users cannot access the app.</p>
+              </div>
+              <Switch
+                checked={editUserData.isActive}
+                onCheckedChange={(checked) => setEditUserData((prev) => ({ ...prev, isActive: checked }))}
+                disabled={editUserData.id === user?.id}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={updateUser.isPending}>
+              {updateUser.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove User Access</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will deactivate {deleteConfirm?.email} and remove app access. The auth account will remain, but the user will not be able to enter the app until a role is assigned again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteConfirm && removeUserAccess.mutate({ userId: deleteConfirm.userId })}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Remove Access
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
