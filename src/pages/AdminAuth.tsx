@@ -195,10 +195,13 @@ const AdminAuth = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md">
+    <div
+      className="min-h-screen flex flex-col items-center justify-center bg-background p-4"
+      style={{ paddingTop: 'max(env(safe-area-inset-top), 16px)' }}
+    >
+      <div className="w-full max-w-md py-4">
         {/* Logo/Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
             <Shield className="w-8 h-8 text-primary" />
           </div>
@@ -206,7 +209,7 @@ const AdminAuth = () => {
           <p className="text-muted-foreground mt-1">Sign in or create an admin account</p>
         </div>
 
-        <Card>
+        <Card className="shadow-sm">
           <CardHeader className="pb-4">
             <CardTitle>Admin Access</CardTitle>
             <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value as 'login' | 'signup'); setErrors({}); }}>

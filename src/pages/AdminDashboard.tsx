@@ -10,7 +10,6 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
   TableBody,
@@ -37,24 +36,18 @@ import {
 import {
   Shield,
   Users,
-  Phone,
-  TrendingUp,
   LogOut,
   Plus,
   UserCheck,
   UserX,
   BarChart3,
-  Target,
-  FileSpreadsheet,
   UserPlus,
-  Link2,
-  ShieldCheck,
+  Mail,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
 import UserRoleManagement from '@/components/admin/UserRoleManagement';
 import LeadAssignment from '@/components/admin/LeadAssignment';
-import CRMConnect from '@/components/admin/CRMConnect';
 
 interface Profile {
   id: string;
@@ -68,11 +61,10 @@ interface UserWithRole extends Profile {
   role: 'admin' | 'sales' | null;
 }
 
-interface Stats {
+interface ReportStats {
   totalLeads: number;
   totalCalls: number;
   convertedLeads: number;
-  activeSalesUsers: number;
 }
 
 const AdminDashboard = () => {
@@ -82,6 +74,7 @@ const AdminDashboard = () => {
   const queryClient = useQueryClient();
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<'users' | 'leads' | 'reports'>('users');
   const [newUserData, setNewUserData] = useState({
     email: '',
     password: '',
@@ -122,9 +115,8 @@ const AdminDashboard = () => {
     enabled: role === 'admin',
   });
 
-  // Fetch stats
-  const { data: stats } = useQuery({
-    queryKey: ['admin-stats'],
+  const { data: reportStats } = useQuery({
+    queryKey: ['admin-report-stats'],
     queryFn: async () => {
       const [leadsRes, callsRes, wonLeadsRes] = await Promise.all([
         supabase.from('leads').select('id', { count: 'exact', head: true }),
@@ -132,16 +124,13 @@ const AdminDashboard = () => {
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('status', 'won'),
       ]);
 
-      const salesUsers = users.filter((u) => u.role === 'sales' && u.is_active);
-
       return {
         totalLeads: leadsRes.count || 0,
         totalCalls: callsRes.count || 0,
         convertedLeads: wonLeadsRes.count || 0,
-        activeSalesUsers: salesUsers.length,
-      } as Stats;
+      } as ReportStats;
     },
-    enabled: role === 'admin' && users.length > 0,
+    enabled: role === 'admin',
   });
 
   // Create new user with role
@@ -227,118 +216,39 @@ const AdminDashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        <div className="container mx-auto px-4 py-3 flex items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <Shield className="w-8 h-8 text-primary" />
-            <div>
-              <h1 className="text-xl font-bold text-foreground">Admin Dashboard</h1>
-              <p className="text-sm text-muted-foreground">Manage your sales team</p>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">Admin Dashboard</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground truncate">Manage your sales team</p>
             </div>
           </div>
-          <Button variant="outline" onClick={handleSignOut}>
+          <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0">
             <LogOut className="w-4 h-4 mr-2" />
             Sign Out
           </Button>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Leads
-              </CardTitle>
-              <Target className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats?.totalLeads || 0}</div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Calls
-              </CardTitle>
-              <Phone className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats?.totalCalls || 0}</div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Converted Leads
-              </CardTitle>
-              <TrendingUp className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats?.convertedLeads || 0}</div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Active Sales Users
-              </CardTitle>
-              <Users className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats?.activeSalesUsers || 0}</div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Tabs */}
-        <Tabs defaultValue="users" className="space-y-6">
-          <TabsList className="flex-wrap h-auto gap-1">
-            <TabsTrigger value="users" className="gap-2">
-              <Users className="w-4 h-4" />
-              Sales Users
-            </TabsTrigger>
-            <TabsTrigger value="roles" className="gap-2">
-              <ShieldCheck className="w-4 h-4" />
-              Role Management
-            </TabsTrigger>
-            <TabsTrigger value="leads" className="gap-2">
-              <UserPlus className="w-4 h-4" />
-              Lead Assignment
-            </TabsTrigger>
-            <TabsTrigger value="import" className="gap-2">
-              <FileSpreadsheet className="w-4 h-4" />
-              Import Leads
-            </TabsTrigger>
-            <TabsTrigger value="crm" className="gap-2">
-              <Link2 className="w-4 h-4" />
-              CRM Connect
-            </TabsTrigger>
-            <TabsTrigger value="reports" className="gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Reports
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="users">
+      <main className="container mx-auto px-4 py-4 sm:py-8 pb-24 sm:pb-8">
+        {activeSection === 'users' && (
+          <>
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="min-w-0">
                   <CardTitle>Sales Users</CardTitle>
                   <CardDescription>Manage your sales team members</CardDescription>
                 </div>
                 <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
                   <DialogTrigger asChild>
-                    <Button>
+                    <Button className="w-full sm:w-auto">
                       <Plus className="w-4 h-4 mr-2" />
                       Add Sales User
                     </Button>
                   </DialogTrigger>
-                  <DialogContent>
+                  <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
                     <DialogHeader>
                       <DialogTitle>Create Sales User</DialogTitle>
                       <DialogDescription>
@@ -416,6 +326,55 @@ const AdminDashboard = () => {
                 </Dialog>
               </CardHeader>
               <CardContent>
+                <div className="md:hidden space-y-3">
+                  {users.map((u) => (
+                    <Card key={u.id} className="border">
+                      <CardContent className="p-3 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{u.full_name || 'No name'}</p>
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                              <Mail className="w-3 h-3" />
+                              {u.email}
+                            </p>
+                          </div>
+                          <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
+                            {u.role || 'No role'}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          {u.is_active ? (
+                            <Badge variant="outline" className="text-green-600 border-green-600">
+                              <UserCheck className="w-3 h-3 mr-1" />
+                              Active
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-red-600 border-red-600">
+                              <UserX className="w-3 h-3 mr-1" />
+                              Inactive
+                            </Badge>
+                          )}
+                          {u.role !== 'admin' && (
+                            <Switch
+                              checked={u.is_active}
+                              onCheckedChange={(checked) =>
+                                toggleUserStatus.mutate({ userId: u.id, isActive: checked })
+                              }
+                            />
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Created {format(new Date(u.created_at), 'MMM d, yyyy')}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {users.length === 0 && (
+                    <div className="text-center text-muted-foreground text-sm py-4">No users found</div>
+                  )}
+                </div>
+
+                <div className="hidden md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -479,31 +438,40 @@ const AdminDashboard = () => {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </CardContent>
             </Card>
-          </TabsContent>
+            <div className="mt-4">
+              <UserRoleManagement users={users} currentUserId={user?.id || ''} />
+            </div>
+          </>
+        )}
 
-          {/* Role Management Tab */}
-          <TabsContent value="roles">
-            <UserRoleManagement users={users} currentUserId={user?.id || ''} />
-          </TabsContent>
+        {activeSection === 'leads' && (
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Lead Assignment</CardTitle>
+                <CardDescription>Assign leads to sales users and track ownership.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <LeadAssignment />
+              </CardContent>
+            </Card>
 
-          {/* Lead Assignment Tab */}
-          <TabsContent value="leads">
-            <LeadAssignment />
-          </TabsContent>
+            <Card>
+              <CardHeader>
+                <CardTitle>Import Leads</CardTitle>
+                <CardDescription>Upload and map new leads for distribution.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <LeadImport />
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
-          {/* Import Leads Tab */}
-          <TabsContent value="import">
-            <LeadImport />
-          </TabsContent>
-
-          {/* CRM Connect Tab */}
-          <TabsContent value="crm">
-            <CRMConnect />
-          </TabsContent>
-
-          <TabsContent value="reports">
+        {activeSection === 'reports' && (
             <Card>
               <CardHeader>
                 <CardTitle>Sales Reports</CardTitle>
@@ -517,13 +485,13 @@ const AdminDashboard = () => {
                     </CardHeader>
                     <CardContent>
                       <div className="text-4xl font-bold text-primary">
-                        {stats?.totalLeads
-                          ? Math.round((stats.convertedLeads / stats.totalLeads) * 100)
+                        {reportStats?.totalLeads
+                          ? Math.round((reportStats.convertedLeads / reportStats.totalLeads) * 100)
                           : 0}
                         %
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {stats?.convertedLeads} of {stats?.totalLeads} leads converted
+                        {reportStats?.convertedLeads || 0} of {reportStats?.totalLeads || 0} leads converted
                       </p>
                     </CardContent>
                   </Card>
@@ -534,8 +502,8 @@ const AdminDashboard = () => {
                     </CardHeader>
                     <CardContent>
                       <div className="text-4xl font-bold text-primary">
-                        {stats?.totalLeads
-                          ? (stats.totalCalls / stats.totalLeads).toFixed(1)
+                        {reportStats?.totalLeads
+                          ? (reportStats.totalCalls / reportStats.totalLeads).toFixed(1)
                           : 0}
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
@@ -546,9 +514,45 @@ const AdminDashboard = () => {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
+        )}
       </main>
+
+      <nav className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border z-50 pb-[env(safe-area-inset-bottom)]">
+        <div className="w-full max-w-md mx-auto grid grid-cols-3 h-16 px-2">
+          <button
+            onClick={() => setActiveSection('users')}
+            className="relative flex flex-col items-center justify-center"
+          >
+            {activeSection === 'users' && <span className="absolute top-0 h-1 w-10 rounded-full bg-primary" />}
+            <Users className={`w-5 h-5 ${activeSection === 'users' ? 'text-primary' : 'text-muted-foreground'}`} />
+            <span className={`text-[11px] mt-1 ${activeSection === 'users' ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+              Users
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveSection('leads')}
+            className="relative flex flex-col items-center justify-center"
+          >
+            {activeSection === 'leads' && <span className="absolute top-0 h-1 w-10 rounded-full bg-primary" />}
+            <UserPlus className={`w-5 h-5 ${activeSection === 'leads' ? 'text-primary' : 'text-muted-foreground'}`} />
+            <span className={`text-[11px] mt-1 ${activeSection === 'leads' ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+              Leads
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveSection('reports')}
+            className="relative flex flex-col items-center justify-center"
+          >
+            {activeSection === 'reports' && <span className="absolute top-0 h-1 w-10 rounded-full bg-primary" />}
+            <BarChart3 className={`w-5 h-5 ${activeSection === 'reports' ? 'text-primary' : 'text-muted-foreground'}`} />
+            <span className={`text-[11px] mt-1 ${activeSection === 'reports' ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+              Reports
+            </span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 };
