@@ -15,17 +15,18 @@ const looksLikePlaceholderTranscription = (value: string | null | undefined) => 
 };
 
 const normalizeSummaryTo50Words = (summary: string) => {
-  const fallback =
-    'Call covered customer needs, current stage, objections, and expected timeline. Use this summary to prepare targeted follow-up, confirm stakeholders, clarify budget and decision process, and align the next conversation with agreed outcomes, so momentum stays strong and the opportunity advances with clear ownership and specific deadlines.';
+  const source = (summary || '').trim();
+  if (!source) return '';
 
-  const source = (summary || '').trim() || fallback;
   const words = source.replace(/\s+/g, ' ').split(' ').filter(Boolean);
 
   if (words.length >= 50) {
     return words.slice(0, 50).join(' ');
   }
 
-  const fillerWords = fallback.split(' ');
+  const fillerWords = [...words];
+  if (fillerWords.length === 0) return '';
+
   let idx = 0;
   while (words.length < 50) {
     words.push(fillerWords[idx % fillerWords.length]);
@@ -49,6 +50,31 @@ const normalizeNextActions = (actions: unknown): string[] => {
     })
     .filter(Boolean)
     .slice(0, 6);
+};
+
+const extractAnalysisPayload = (aiResponse: any) => {
+  const message = aiResponse?.choices?.[0]?.message;
+  const toolArgs = message?.tool_calls?.[0]?.function?.arguments;
+
+  if (toolArgs) {
+    try {
+      return JSON.parse(toolArgs);
+    } catch (error) {
+      console.error('Failed to parse tool call arguments:', error);
+    }
+  }
+
+  const content = message?.content;
+  if (typeof content === 'string') {
+    const cleaned = content.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 };
 
 const markAnalysisFailed = async (
@@ -106,7 +132,9 @@ const transcribeWithModel = async (params: {
   formData.append('model', model);
   formData.append('file', audioFile);
   formData.append('prompt', INDIAN_LANGUAGE_HINT);
-  formData.append('response_format', 'verbose_json');
+  if (model === 'whisper-1') {
+    formData.append('response_format', 'verbose_json');
+  }
 
   const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
@@ -224,6 +252,10 @@ serve(async (req) => {
       }
     }
 
+    if (!finalTranscription || finalTranscription.trim().length < 12) {
+      throw new Error('Unable to produce usable transcript from this recording. Please retry with clearer call audio.');
+    }
+
     const systemPrompt = `You are a sales call analyzer for field sales users.
 
   Analyze the call content and return:
@@ -253,9 +285,10 @@ Respond using the analyze_call function.`;
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
+        temperature: 0.2,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Call transcription:\n${finalTranscription || 'No transcription available. Please provide general follow-up suggestions based on the call type and duration.'}` }
+          { role: "user", content: `Call transcription:\n${finalTranscription}` }
         ],
         tools: [
           {
@@ -310,33 +343,23 @@ Respond using the analyze_call function.`;
     }
 
     const aiResponse = await response.json();
-    const toolCall = aiResponse.choices?.[0]?.message?.tool_calls?.[0];
-    
-    let analysis = {
-      summary: "Call discussed customer needs, current stage, and expected timeline, with next steps focused on targeted follow-up, stakeholder confirmation, and commercial clarity. Sales owner should align proposal details to stated priorities, confirm decision process, and keep momentum through timely communication and clear accountability before the next conversation with the buyer.",
-      next_actions: [
-        "Send a tailored follow-up message within 24 hours.",
-        "Confirm decision-maker and buying timeline on the next touchpoint.",
-        "Update CRM notes with call outcomes and commitments."
-      ]
-    };
-
-    if (toolCall?.function?.arguments) {
-      try {
-        const parsed = JSON.parse(toolCall.function.arguments);
-        analysis = {
-          summary: normalizeSummaryTo50Words(String(parsed?.summary || '')),
-          next_actions: normalizeNextActions(parsed?.next_actions),
-        };
-      } catch (e) {
-        console.error("Failed to parse AI response:", e);
-      }
+    const parsedPayload = extractAnalysisPayload(aiResponse);
+    if (!parsedPayload) {
+      throw new Error('AI returned unstructured output. Please retry analysis.');
     }
 
-    analysis = {
-      summary: normalizeSummaryTo50Words(analysis.summary),
-      next_actions: normalizeNextActions(analysis.next_actions),
+    const analysis = {
+      summary: normalizeSummaryTo50Words(String(parsedPayload?.summary || '')),
+      next_actions: normalizeNextActions(parsedPayload?.next_actions),
     };
+
+    if (!analysis.summary) {
+      throw new Error('AI returned empty summary. Please retry analysis.');
+    }
+
+    if (analysis.next_actions.length === 0) {
+      throw new Error('AI returned empty next actions. Please retry analysis.');
+    }
 
     // Update the recording with AI analysis
     if (recordingId) {
