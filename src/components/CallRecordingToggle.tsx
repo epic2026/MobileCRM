@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +39,7 @@ interface ImportedSystemRecording {
 const IMPORT_ONLY_MODE = true;
 
 export const CallRecordingToggle = () => {
+  const hasAutoScannedRef = useRef(false);
   const [isUploadingDebugRecording, setIsUploadingDebugRecording] = useState(false);
   const [isScanningSystemRecordings, setIsScanningSystemRecordings] = useState(false);
   const [importingContentUri, setImportingContentUri] = useState<string | null>(null);
@@ -79,6 +80,18 @@ export const CallRecordingToggle = () => {
 
     void stopService();
   }, [isServiceRunning, stopService]);
+
+  // Auto-scan for device recordings on first load when running as a native app.
+  // The deduplication check inside importSystemRecording prevents double-imports.
+  useEffect(() => {
+    if (!isNative || !user || hasAutoScannedRef.current) return;
+    hasAutoScannedRef.current = true;
+    const timer = setTimeout(() => { void scanSystemRecordings(); }, 3000);
+    return () => clearTimeout(timer);
+  // scanSystemRecordings is intentionally omitted from deps – it is recreated
+  // each render but we only want this to fire once after the user + native flag settle.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNative, user]);
 
   const normalizePhone = (value: string) => value.replace(/\D/g, '');
 
@@ -190,6 +203,12 @@ export const CallRecordingToggle = () => {
         timeDiffMs: number;
       } | null = null;
 
+      // Collect all call logs whose timestamp is within ±10 min of the recording.
+      // Used later for the timestamp-only fallback — we only auto-import when the
+      // match is UNAMBIGUOUS (exactly one call in the window).
+      const TIMESTAMP_WINDOW_MS = 10 * 60 * 1000;
+      const closeTimeLogs: typeof best[] = [];
+
       for (const log of callLogs || []) {
         const logTime = new Date(log.created_at).getTime();
         const timeDiffMs = Math.abs(logTime - recordedAt);
@@ -211,9 +230,23 @@ export const CallRecordingToggle = () => {
             timeDiffMs,
           };
         }
+
+        // Track close-time candidates independently for the timestamp fallback.
+        if (timeDiffMs <= TIMESTAMP_WINDOW_MS) {
+          closeTimeLogs.push({
+            id: log.id,
+            lead_id: log.lead_id,
+            phone: log.phone,
+            created_at: log.created_at,
+            duration: log.duration,
+            score,
+            phoneMatched,
+            timeDiffMs,
+          });
+        }
       }
 
-      const confidence: MatchConfidence = best
+      let confidence: MatchConfidence = best
         ? computeMatchConfidence({
             phoneMatched: best.phoneMatched,
             timeDiffMs: best.timeDiffMs,
@@ -224,12 +257,48 @@ export const CallRecordingToggle = () => {
           })
         : 'low';
 
+      let matchedCallLogId = confidence !== 'low' ? best?.id || null : null;
+      let matchedLeadId = confidence !== 'low' ? best?.lead_id || null : null;
+      let matchedPhone = confidence !== 'low' ? best?.phone || null : null;
+
+      // Fallback 1: if call-log matching left confidence as 'low' but the filename
+      // contains a phone number, try to match directly against leads.  This is the
+      // common case on Samsung devices where call logs are NOT yet in Supabase but
+      // the recording filename embeds the full number, e.g.
+      // "Call recording +919876543208_164234.m4a".
+      if (confidence === 'low' && targetLast10) {
+        const directLead = leads.find((lead) => {
+          const leadLast10 = toLast10(lead.phone || '');
+          return leadLast10.length >= 10 && leadLast10 === targetLast10;
+        });
+        if (directLead) {
+          confidence = 'medium';
+          matchedLeadId = directLead.id;
+          matchedPhone = directLead.phone;
+          matchedCallLogId = null;
+        }
+      }
+
+      // Fallback 2: timestamp-only match.
+      // If we still have no confident match, check whether EXACTLY ONE call log
+      // falls within ±10 minutes of the recording timestamp.  If it's unambiguous
+      // (one call, one recording → clear 1:1) we treat it as 'medium' confidence
+      // and link to that call log's lead.
+      // We skip this when multiple calls are in the window to avoid mis-attribution.
+      if (confidence === 'low' && closeTimeLogs.length === 1) {
+        const tsMatch = closeTimeLogs[0]!;
+        confidence = 'medium';
+        matchedCallLogId = tsMatch.id;
+        matchedLeadId = tsMatch.lead_id;
+        matchedPhone = tsMatch.phone;
+      }
+
       return {
         ...recording,
         detectedPhone,
-        matchedCallLogId: confidence !== 'low' ? best?.id || null : null,
-        matchedLeadId: confidence !== 'low' ? best?.lead_id || null : null,
-        matchedPhone: confidence !== 'low' ? best?.phone || null : null,
+        matchedCallLogId,
+        matchedLeadId,
+        matchedPhone,
         confidence,
       } as ImportedSystemRecording;
     });
