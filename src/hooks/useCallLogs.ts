@@ -36,6 +36,8 @@ export const useCallLogs = () => {
       return data as CallLogEntry[];
     },
     enabled: !!user,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
   });
 
   // Real-time subscription

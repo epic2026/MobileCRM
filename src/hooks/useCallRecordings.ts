@@ -66,6 +66,8 @@ export const useCallRecordings = (leadId?: string | null) => {
       return data as CallRecording[];
     },
     enabled: !!user,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
   });
 
   const createRecording = useMutation({

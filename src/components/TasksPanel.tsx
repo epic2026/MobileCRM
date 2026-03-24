@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
 import { CheckCircle2, Clock, AlertCircle, Calendar, User, Plus, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -40,6 +39,49 @@ const statusConfig: Record<TaskStatus, { icon: React.ReactNode; color: string; l
   in_progress: { icon: <AlertCircle className="w-4 h-4" />, color: 'bg-primary/20 text-primary border-primary/30', label: 'In Progress' },
   completed: { icon: <CheckCircle2 className="w-4 h-4" />, color: 'bg-success/20 text-success border-success/30', label: 'Completed' },
   cancelled: { icon: <X className="w-4 h-4" />, color: 'bg-muted text-muted-foreground border-muted', label: 'Cancelled' },
+};
+
+const TaskCard = ({ task, onStatusChange }: { task: Task; onStatusChange: (id: string, status: TaskStatus) => void }) => {
+  const config = statusConfig[task.status];
+  const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed' && task.status !== 'cancelled';
+
+  return (
+    <div className={`glass-card p-4 ${isOverdue ? 'border-destructive/50' : ''}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-medium text-foreground truncate">{task.title}</h3>
+          {task.description && (
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{task.description}</p>
+          )}
+          {task.lead && (
+            <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+              <User className="w-3 h-3" />
+              <span>{task.lead.name}</span>
+              {task.lead.company && <span className="text-muted-foreground/70">• {task.lead.company}</span>}
+            </div>
+          )}
+          {task.due_date && (
+            <div className={`flex items-center gap-1 mt-1 text-xs ${isOverdue ? 'text-destructive' : 'text-muted-foreground'}`}>
+              <Calendar className="w-3 h-3" />
+              <span>{format(new Date(task.due_date), 'MMM d, yyyy h:mm a')}</span>
+              {isOverdue && <span className="font-medium">(Overdue)</span>}
+            </div>
+          )}
+        </div>
+        <Select value={task.status} onValueChange={(v) => onStatusChange(task.id, v as TaskStatus)}>
+          <SelectTrigger className={`w-auto h-7 text-xs ${config.color} border`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="in_progress">In Progress</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="cancelled">Cancelled</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
 };
 
 const TasksPanel = () => {
@@ -96,54 +138,6 @@ const TasksPanel = () => {
 
   const completedTasks = filteredTasks.filter(task => task.status === 'completed');
   const otherTasks = filteredTasks.filter(task => !task.due_date && task.status !== 'completed' && task.status !== 'cancelled');
-
-  const TaskCard = ({ task, index }: { task: Task; index: number }) => {
-    const config = statusConfig[task.status];
-    const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed' && task.status !== 'cancelled';
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: index * 0.03 }}
-        className={`glass-card p-4 ${isOverdue ? 'border-destructive/50' : ''}`}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-foreground truncate">{task.title}</h3>
-            {task.description && (
-              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{task.description}</p>
-            )}
-            {task.lead && (
-              <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-                <User className="w-3 h-3" />
-                <span>{task.lead.name}</span>
-                {task.lead.company && <span className="text-muted-foreground/70">• {task.lead.company}</span>}
-              </div>
-            )}
-            {task.due_date && (
-              <div className={`flex items-center gap-1 mt-1 text-xs ${isOverdue ? 'text-destructive' : 'text-muted-foreground'}`}>
-                <Calendar className="w-3 h-3" />
-                <span>{format(new Date(task.due_date), 'MMM d, yyyy h:mm a')}</span>
-                {isOverdue && <span className="font-medium">(Overdue)</span>}
-              </div>
-            )}
-          </div>
-          <Select value={task.status} onValueChange={(v) => updateTaskStatus(task.id, v as TaskStatus)}>
-            <SelectTrigger className={`w-auto h-7 text-xs ${config.color} border`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </motion.div>
-    );
-  };
 
   return (
     <div className="pb-20">
@@ -212,8 +206,8 @@ const TasksPanel = () => {
                   Overdue ({overdueTasks.length})
                 </h2>
                 <div className="space-y-2">
-                  {overdueTasks.map((task, index) => (
-                    <TaskCard key={task.id} task={task} index={index} />
+                  {overdueTasks.map((task) => (
+                    <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
                   ))}
                 </div>
               </div>
@@ -226,8 +220,8 @@ const TasksPanel = () => {
                   Upcoming ({upcomingTasks.length})
                 </h2>
                 <div className="space-y-2">
-                  {upcomingTasks.map((task, index) => (
-                    <TaskCard key={task.id} task={task} index={index} />
+                  {upcomingTasks.map((task) => (
+                    <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
                   ))}
                 </div>
               </div>
@@ -237,8 +231,8 @@ const TasksPanel = () => {
               <div>
                 <h2 className="text-sm font-semibold text-muted-foreground mb-2">No Due Date ({otherTasks.length})</h2>
                 <div className="space-y-2">
-                  {otherTasks.map((task, index) => (
-                    <TaskCard key={task.id} task={task} index={index} />
+                  {otherTasks.map((task) => (
+                    <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
                   ))}
                 </div>
               </div>
@@ -251,8 +245,8 @@ const TasksPanel = () => {
                   Completed ({completedTasks.length})
                 </h2>
                 <div className="space-y-2">
-                  {completedTasks.slice(0, 5).map((task, index) => (
-                    <TaskCard key={task.id} task={task} index={index} />
+                {completedTasks.slice(0, 5).map((task) => (
+                  <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
                   ))}
                   {completedTasks.length > 5 && (
                     <p className="text-xs text-muted-foreground text-center py-2">

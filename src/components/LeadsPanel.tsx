@@ -323,10 +323,8 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
                 .slice(0, 2);
 
               return (
-                <motion.div
+                <div
                   key={lead.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
                   className="rounded-2xl border border-border/60 bg-card p-3 shadow-sm"
                   onClick={() => setSelectedLead(lead)}
                 >
@@ -420,7 +418,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
                       </div>
                     </div>
                   </div>
-                </motion.div>
+                </div>
               );
             })}
           </div>

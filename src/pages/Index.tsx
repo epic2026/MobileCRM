@@ -14,7 +14,13 @@ import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState('leads');
+  const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set(['leads']));
   const { toast } = useToast();
+
+  const handleTabChange = (tab: string) => {
+    setMountedTabs(prev => new Set([...prev, tab]));
+    setActiveTab(tab);
+  };
   const { createCallLog } = useCallLogs();
   const { user } = useAuth();
 
@@ -96,28 +102,33 @@ const Index = () => {
     window.location.href = `https://wa.me/${waNumber}`;
   };
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'leads':
-        return <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />;
-      case 'tasks':
-        return <TasksPanel />;
-      case 'activity':
-        return <CallActivity onCall={handleCall} />;
-      case 'integrations':
-        return <CRMIntegrations />;
-      case 'settings':
-        return <SettingsPanel />;
-      default:
-        return <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />;
-    }
-  };
-
   return (
     <MobileLayout>
       <CallRecordingStartup />
-      {renderContent()}
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <div className={activeTab === 'leads' ? '' : 'hidden'}>
+        <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />
+      </div>
+      {mountedTabs.has('tasks') && (
+        <div className={activeTab === 'tasks' ? '' : 'hidden'}>
+          <TasksPanel />
+        </div>
+      )}
+      {mountedTabs.has('activity') && (
+        <div className={activeTab === 'activity' ? '' : 'hidden'}>
+          <CallActivity onCall={handleCall} />
+        </div>
+      )}
+      {mountedTabs.has('integrations') && (
+        <div className={activeTab === 'integrations' ? '' : 'hidden'}>
+          <CRMIntegrations />
+        </div>
+      )}
+      {mountedTabs.has('settings') && (
+        <div className={activeTab === 'settings' ? '' : 'hidden'}>
+          <SettingsPanel />
+        </div>
+      )}
+      <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
     </MobileLayout>
   );
 };

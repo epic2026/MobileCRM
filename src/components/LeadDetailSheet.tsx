@@ -192,17 +192,17 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
   };
 
   // Generate AI insights based on activities and lead data
-  const generateInsights = () => {
+  const insights = useMemo(() => {
     const callCount = activities.filter((a) => a.type === 'call').length;
     const lastActivity = activities[0];
     const daysSinceLastActivity = lastActivity
       ? Math.floor((Date.now() - new Date(lastActivity.created_at).getTime()) / (1000 * 60 * 60 * 24))
       : null;
 
-    const insights = [];
+    const result = [];
 
     if (lead.status === 'new' && callCount === 0) {
-      insights.push({
+      result.push({
         icon: <Phone className="w-4 h-4 text-primary" />,
         text: 'New lead - consider making an introductory call',
         priority: 'high',
@@ -210,7 +210,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
     }
 
     if (daysSinceLastActivity !== null && daysSinceLastActivity > 7) {
-      insights.push({
+      result.push({
         icon: <Clock className="w-4 h-4 text-warning" />,
         text: `No activity in ${daysSinceLastActivity} days - follow up recommended`,
         priority: 'medium',
@@ -218,7 +218,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
     }
 
     if (lead.value && lead.value > 5000 && lead.status !== 'won') {
-      insights.push({
+      result.push({
         icon: <Sparkles className="w-4 h-4 text-accent" />,
         text: 'High-value lead - prioritize engagement',
         priority: 'high',
@@ -226,7 +226,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
     }
 
     if (lead.status === 'proposal' || lead.status === 'negotiation') {
-      insights.push({
+      result.push({
         icon: <CheckCircle2 className="w-4 h-4 text-success" />,
         text: 'Close to conversion - maintain momentum',
         priority: 'high',
@@ -234,15 +234,15 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
     }
 
     if (tasks.filter((t) => t.status === 'pending').length > 3) {
-      insights.push({
+      result.push({
         icon: <ListTodo className="w-4 h-4 text-destructive" />,
         text: 'Multiple pending tasks - prioritize completion',
         priority: 'medium',
       });
     }
 
-    return insights.length > 0
-      ? insights
+    return result.length > 0
+      ? result
       : [
           {
             icon: <Sparkles className="w-4 h-4 text-muted-foreground" />,
@@ -250,9 +250,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
             priority: 'low',
           },
         ];
-  };
-
-  const insights = generateInsights();
+  }, [activities, tasks, lead.status, lead.value]);
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
@@ -415,12 +413,9 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                 {activities.length === 0 ? (
                   <p className="text-center py-8 text-muted-foreground">No activities yet</p>
                 ) : (
-                  activities.map((activity, index) => (
-                    <motion.div
+                  activities.map((activity) => (
+                    <div
                       key={activity.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
                       className="p-3 glass-card"
                     >
                       <div className="flex gap-3">
@@ -452,7 +447,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                           <CallRecordingPlayer recording={recordingsByActivityId.get(activity.id)!} compact />
                         </div>
                       )}
-                    </motion.div>
+                    </div>
                   ))
                 )}
               </div>

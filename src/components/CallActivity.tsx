@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, TrendingUp, Phone, Calendar, Filter } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { useCallLogs, CallLogEntry, CallType } from '@/hooks/useCallLogs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -216,17 +215,14 @@ const CallActivity = ({ onCall }: CallActivityProps) => {
             <p className="text-sm text-muted-foreground/70">Make a call to see activity here</p>
           </div>
         ) : (
-          filteredLogs.map((log, index) => {
+          filteredLogs.map((log) => {
             const initials = log.contact_name
               ? log.contact_name.split(' ').map((n) => n[0]).join('').toUpperCase()
               : log.phone.slice(-2);
 
             return (
-              <motion.div
+              <div
                 key={log.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.03 }}
                 onClick={() => onCall(log.phone, log.contact_name || log.phone)}
                 className="glass-card p-4 cursor-pointer active:bg-secondary/50 transition-colors"
               >
@@ -283,7 +279,7 @@ const CallActivity = ({ onCall }: CallActivityProps) => {
                     )}
                   </div>
                 )}
-              </motion.div>
+              </div>
             );
           })
         )}

@@ -34,6 +34,8 @@ export const useLeadActivities = (leadId: string | null) => {
       return data as LeadActivity[];
     },
     enabled: !!leadId,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
   });
 
   // Real-time subscription
@@ -41,7 +43,7 @@ export const useLeadActivities = (leadId: string | null) => {
     if (!leadId) return;
 
     const channel = supabase
-      .channel('lead-activities-changes')
+      .channel(`lead-activities-changes-${leadId}`)
       .on(
         'postgres_changes',
         {

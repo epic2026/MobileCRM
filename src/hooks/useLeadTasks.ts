@@ -33,6 +33,8 @@ export const useLeadTasks = (leadId: string | null) => {
       return data as LeadTask[];
     },
     enabled: !!leadId,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
   });
 
   const createTask = useMutation({

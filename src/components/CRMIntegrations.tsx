@@ -61,11 +61,8 @@ const CRMIntegrations = () => {
           {integrations
             .filter((int) => int.connected)
             .map((integration, index) => (
-              <motion.div
+              <div
                 key={integration.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
                 className="glass-card p-4"
               >
                 <div className="flex items-center gap-4">
@@ -115,7 +112,7 @@ const CRMIntegrations = () => {
                     </motion.button>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             ))}
         </div>
       </div>
@@ -127,11 +124,8 @@ const CRMIntegrations = () => {
           {integrations
             .filter((int) => !int.connected)
             .map((integration, index) => (
-              <motion.div
+              <div
                 key={integration.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
                 onClick={() => handleConnect(integration)}
                 className="glass-card p-4 cursor-pointer active:bg-secondary/50 transition-colors"
               >
@@ -154,7 +148,7 @@ const CRMIntegrations = () => {
 
                   <ChevronRight className="w-5 h-5 text-muted-foreground" />
                 </div>
-              </motion.div>
+              </div>
             ))}
         </div>
       </div>
