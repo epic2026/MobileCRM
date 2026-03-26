@@ -77,29 +77,28 @@ const PrivacyPolicy = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Mic className="h-4 w-4 text-primary" />
-              Microphone Access
+              Audio File Access
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-3">
             <p><strong>What we access:</strong></p>
             <ul className="list-disc list-inside space-y-1 ml-2">
-              <li>Audio recordings initiated by you within the app</li>
+              <li>Call recording audio files already stored on your device</li>
             </ul>
             <p><strong>Why we need it:</strong></p>
             <p>
-              Microphone access allows you to record voice notes and memos after calls. 
-              This helps you capture important details, action items, and follow-up notes 
-              while the conversation is still fresh.
+              Audio file access allows the app to scan and import device call recordings 
+              so they can be matched with leads and attached to CRM activity history.
             </p>
             <p><strong>How we use it:</strong></p>
             <ul className="list-disc list-inside space-y-1 ml-2">
-              <li>Record voice memos that you manually initiate</li>
-              <li>Convert voice notes to text (optional feature)</li>
-              <li>Attach recordings to lead activity logs</li>
+              <li>Scan eligible call recordings saved on your device</li>
+              <li>Match recordings to leads and call activities</li>
+              <li>Import selected recordings into your CRM workspace</li>
             </ul>
             <p className="bg-muted p-3 rounded-lg">
-              <strong>Important:</strong> We do NOT automatically record phone calls. 
-              All recordings must be manually initiated by you within the app.
+              <strong>Important:</strong> The app does NOT create phone call recordings by itself. 
+              It only reads recordings that already exist on your device when auto-import or device scan is used.
             </p>
           </CardContent>
         </Card>
@@ -115,7 +114,7 @@ const PrivacyPolicy = () => {
             <p><strong>Where your data is stored:</strong></p>
             <ul className="list-disc list-inside space-y-1 ml-2">
               <li>Lead and contact information is stored securely in our cloud database</li>
-              <li>Voice recordings are stored locally on your device</li>
+              <li>Imported call recordings may remain on your device and may also be uploaded to secure app storage</li>
               <li>Call activity logs are synced to your account</li>
             </ul>
             <p><strong>Data retention:</strong></p>

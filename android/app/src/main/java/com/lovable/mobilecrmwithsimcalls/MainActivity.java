@@ -8,7 +8,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(CallLogPlugin.class);
-        registerPlugin(AudioRecorderPlugin.class);
         registerPlugin(CallRecordingPlugin.class);
         super.onCreate(savedInstanceState);
     }

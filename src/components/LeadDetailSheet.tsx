@@ -148,16 +148,9 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
     return map;
   }, [lead, activities, recordings]);
 
-  if (!lead) return null;
-
-  const initials = lead.name
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase();
-
   const handleCreateTask = () => {
     if (!taskForm.title) return;
+    if (!lead) return;
     createTask.mutate({
       lead_id: lead.id,
       title: taskForm.title,
@@ -180,6 +173,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
 
   const handleCreateActivity = () => {
     if (!activityForm.title) return;
+    if (!lead) return;
     createActivity.mutate({
       lead_id: lead.id,
       type: activityForm.type,
@@ -193,6 +187,10 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
 
   // Generate AI insights based on activities and lead data
   const insights = useMemo(() => {
+    if (!lead) {
+      return [];
+    }
+
     const callCount = activities.filter((a) => a.type === 'call').length;
     const lastActivity = activities[0];
     const daysSinceLastActivity = lastActivity
@@ -250,10 +248,23 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
             priority: 'low',
           },
         ];
-  }, [activities, tasks, lead.status, lead.value]);
+  }, [activities, tasks, lead]);
+
+  if (!lead) return null;
+
+  const initials = lead.name
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase();
 
   return (
-    <Sheet open={isOpen} onOpenChange={onClose}>
+    <Sheet
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <SheetContent side="bottom" className="h-[90%] bg-background rounded-t-3xl p-0 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-6 pb-4 border-b border-border">

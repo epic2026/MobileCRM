@@ -4,22 +4,10 @@
     <!-- 🌐 Network -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- 📞 Call permissions -->
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- 📞 Call log permission -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
-
-    <!-- 🎙️ Audio recording -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-
-    <!-- Foreground service -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-
-    <!-- Optional overlay -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:allowBackup="true"
@@ -37,21 +25,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <!-- Call State Receiver -->
-        <receiver
-            android:name=".CallStateReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.PHONE_STATE" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Call Recording Service -->
-        <service
-            android:name=".CallRecordingService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
 
     </application>
 

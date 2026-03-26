@@ -1,4 +1,4 @@
-import { User, Bell, Shield, HelpCircle, LogOut, ChevronRight, Smartphone, FileText, Sun, Moon } from 'lucide-react';
+import { Bell, LogOut, ChevronRight, FileText, Sun, Moon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Switch } from '@/components/ui/switch';
@@ -28,11 +28,7 @@ const SettingsPanel = () => {
   };
 
   const menuItems = [
-    { icon: User, label: 'Account Settings', hasChevron: true, onClick: () => {} },
-    { icon: Smartphone, label: 'SIM Card Settings', hasChevron: true, onClick: () => {} },
-    { icon: Shield, label: 'Privacy & Security', hasChevron: true, onClick: () => {} },
     { icon: FileText, label: 'Privacy Policy', hasChevron: true, onClick: () => navigate('/privacy') },
-    { icon: HelpCircle, label: 'Help & Support', hasChevron: true, onClick: () => {} },
   ];
 
   return (
