@@ -3,12 +3,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useEffect } from 'react';
 import type { Json } from '@/integrations/supabase/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 export type ActivityType = 'call' | 'email' | 'meeting' | 'note' | 'task_created' | 'status_change';
 
 export interface LeadActivity {
   id: string;
   lead_id: string;
+  user_id: string | null;
   type: string;
   title: string;
   description: string | null;
@@ -19,6 +21,7 @@ export interface LeadActivity {
 export const useLeadActivities = (leadId: string | null) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const { data: activities = [], isLoading, error } = useQuery({
     queryKey: ['lead_activities', leadId],
@@ -64,7 +67,9 @@ export const useLeadActivities = (leadId: string | null) => {
   }, [leadId, queryClient]);
 
   const createActivity = useMutation({
-    mutationFn: async (activity: Omit<LeadActivity, 'id' | 'created_at'> & { user_id?: string }) => {
+    mutationFn: async (activity: Omit<LeadActivity, 'id' | 'created_at' | 'user_id'>) => {
+      if (!user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('lead_activities')
         .insert([{
@@ -73,7 +78,7 @@ export const useLeadActivities = (leadId: string | null) => {
           title: activity.title,
           description: activity.description,
           metadata: activity.metadata,
-          user_id: activity.user_id,
+          user_id: user.id,
         }])
         .select()
         .single();

@@ -112,7 +112,6 @@
     @apply bg-background text-foreground font-sans antialiased;
     margin: 0;
     font-family: 'Inter', sans-serif;
-    overscroll-behavior-y: none;
   }
 }
 

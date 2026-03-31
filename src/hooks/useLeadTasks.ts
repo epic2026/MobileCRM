@@ -1,12 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
 export interface LeadTask {
   id: string;
   lead_id: string;
+  user_id: string | null;
   title: string;
   description: string | null;
   due_date: string | null;
@@ -18,6 +20,7 @@ export interface LeadTask {
 export const useLeadTasks = (leadId: string | null) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const { data: tasks = [], isLoading, error } = useQuery({
     queryKey: ['lead_tasks', leadId],
@@ -38,10 +41,15 @@ export const useLeadTasks = (leadId: string | null) => {
   });
 
   const createTask = useMutation({
-    mutationFn: async (task: Omit<LeadTask, 'id' | 'created_at' | 'updated_at'> & { user_id?: string }) => {
+    mutationFn: async (task: Omit<LeadTask, 'id' | 'created_at' | 'updated_at' | 'user_id'>) => {
+      if (!user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('lead_tasks')
-        .insert(task)
+        .insert({
+          ...task,
+          user_id: user.id,
+        })
         .select()
         .single();
 

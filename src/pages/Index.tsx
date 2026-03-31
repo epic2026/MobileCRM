@@ -102,26 +102,14 @@ const Index = () => {
     window.location.href = `https://wa.me/${waNumber}`;
   };
 
-  const renderActiveTab = () => {
-    switch (activeTab) {
-      case 'tasks':
-        return <TasksPanel />;
-      case 'activity':
-        return <CallActivity onCall={handleCall} />;
-      case 'integrations':
-        return <CRMIntegrations />;
-      case 'settings':
-        return <SettingsPanel />;
-      case 'leads':
-      default:
-        return <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />;
-    }
-  };
-
   return (
     <MobileLayout>
       <CallRecordingStartup />
-      {renderActiveTab()}
+      {activeTab === 'leads' && <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />}
+      {activeTab === 'tasks' && <TasksPanel />}
+      {activeTab === 'activity' && <CallActivity onCall={handleCall} />}
+      {activeTab === 'integrations' && <CRMIntegrations />}
+      {activeTab === 'settings' && <SettingsPanel />}
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
     </MobileLayout>
   );

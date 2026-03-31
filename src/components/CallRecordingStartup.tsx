@@ -17,13 +17,14 @@ const CallRecordingStartup = () => {
 
   useEffect(() => {
     if (!isNativeApp() || !user || hasRunRef.current) return;
-    hasRunRef.current = true;
 
     let timeoutId: number | undefined;
     let frameId: number | undefined;
     let cancelled = false;
 
     const runStartupImport = async () => {
+      hasRunRef.current = true;
+
       try {
         const granted = await ensureMediaAudioPermission();
         if (cancelled) return;
@@ -91,7 +92,7 @@ const CallRecordingStartup = () => {
         window.clearTimeout(timeoutId);
       }
     };
-  }, [analyzeRecording.mutate, createRecording.mutateAsync, toast, uploadRecording, user]);
+  }, [user?.id]);
 
   return null;
 };
