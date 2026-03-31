@@ -19,7 +19,12 @@ export interface CallLogEntry {
   user_id: string | null;
 }
 
-export const useCallLogs = () => {
+interface UseCallLogsOptions {
+  fetchLogs?: boolean;
+  realtime?: boolean;
+}
+
+export const useCallLogs = ({ fetchLogs = true, realtime = true }: UseCallLogsOptions = {}) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -35,13 +40,15 @@ export const useCallLogs = () => {
       if (error) throw error;
       return data as CallLogEntry[];
     },
-    enabled: !!user,
+    enabled: !!user && fetchLogs,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
   });
 
   // Real-time subscription
   useEffect(() => {
+    if (!user || !realtime) return;
+
     const channel = supabase
       .channel('call_logs_changes')
       .on(
@@ -60,7 +67,7 @@ export const useCallLogs = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [queryClient]);
+  }, [queryClient, realtime, user]);
 
   const createCallLog = useMutation({
     mutationFn: async (callLog: Omit<CallLogEntry, 'id' | 'created_at' | 'user_id'>) => {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { startTransition, useState } from 'react';
 import { useCallLogs } from '@/hooks/useCallLogs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,14 +14,14 @@ import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState('leads');
-  const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set(['leads']));
   const { toast } = useToast();
 
   const handleTabChange = (tab: string) => {
-    setMountedTabs(prev => new Set([...prev, tab]));
-    setActiveTab(tab);
+    startTransition(() => {
+      setActiveTab(tab);
+    });
   };
-  const { createCallLog } = useCallLogs();
+  const { createCallLog } = useCallLogs({ fetchLogs: false, realtime: false });
   const { user } = useAuth();
 
   // Format phone for India
@@ -102,32 +102,26 @@ const Index = () => {
     window.location.href = `https://wa.me/${waNumber}`;
   };
 
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case 'tasks':
+        return <TasksPanel />;
+      case 'activity':
+        return <CallActivity onCall={handleCall} />;
+      case 'integrations':
+        return <CRMIntegrations />;
+      case 'settings':
+        return <SettingsPanel />;
+      case 'leads':
+      default:
+        return <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />;
+    }
+  };
+
   return (
     <MobileLayout>
       <CallRecordingStartup />
-      <div className={activeTab === 'leads' ? '' : 'hidden'}>
-        <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />
-      </div>
-      {mountedTabs.has('tasks') && (
-        <div className={activeTab === 'tasks' ? '' : 'hidden'}>
-          <TasksPanel />
-        </div>
-      )}
-      {mountedTabs.has('activity') && (
-        <div className={activeTab === 'activity' ? '' : 'hidden'}>
-          <CallActivity onCall={handleCall} />
-        </div>
-      )}
-      {mountedTabs.has('integrations') && (
-        <div className={activeTab === 'integrations' ? '' : 'hidden'}>
-          <CRMIntegrations />
-        </div>
-      )}
-      {mountedTabs.has('settings') && (
-        <div className={activeTab === 'settings' ? '' : 'hidden'}>
-          <SettingsPanel />
-        </div>
-      )}
+      {renderActiveTab()}
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
     </MobileLayout>
   );

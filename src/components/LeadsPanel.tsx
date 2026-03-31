@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useDeferredValue, useState } from 'react';
 import { Search, Plus, Phone, Edit2, Trash2, MessageCircle, Building2, IndianRupee } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useLeads, Lead, LeadStatus } from '@/hooks/useLeads';
@@ -58,6 +58,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
 
   // Form state
   const [formData, setFormData] = useState({
@@ -125,11 +126,27 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
     setIsAddSheetOpen(true);
   };
 
+  const statusCounts = leads.reduce<Record<'all' | LeadStatus, number>>((counts, lead) => {
+    counts.all += 1;
+    counts[lead.status] += 1;
+    return counts;
+  }, {
+    all: 0,
+    new: 0,
+    contacted: 0,
+    qualified: 0,
+    proposal: 0,
+    negotiation: 0,
+    won: 0,
+    lost: 0,
+  });
+
   const filteredLeads = leads.filter((lead) => {
     const matchesSearch =
-      lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (lead.company?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
-      lead.phone.includes(searchQuery);
+      deferredSearchQuery.length === 0 ||
+      lead.name.toLowerCase().includes(deferredSearchQuery) ||
+      (lead.company?.toLowerCase().includes(deferredSearchQuery) ?? false) ||
+      lead.phone.includes(deferredSearchQuery);
 
     const matchesStatus = selectedStatus === 'all' || lead.status === selectedStatus;
 
@@ -153,7 +170,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
   return (
     <div className="pb-24 h-full flex flex-col overflow-x-hidden">
       {/* Header */}
-      <div className="sticky top-0 bg-background/95 backdrop-blur-xl z-10 px-4 pt-5 pb-3 border-b border-border/40">
+      <div className="sticky top-0 bg-background z-10 px-4 pt-5 pb-3 border-b border-border/60">
         {/* Search + Add */}
         <div className="flex items-center gap-3">
           <div className="relative flex-1">
@@ -282,7 +299,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
                   : 'bg-card text-muted-foreground border-border'
               }`}
             >
-              All ({leads.length})
+              All ({statusCounts.all})
             </button>
             {allStatuses.map((status) => (
               <button
@@ -294,7 +311,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
                     : 'bg-card text-muted-foreground border-border'
                 }`}
               >
-                {statusLabels[status]} ({leads.filter((lead) => lead.status === status).length})
+                  {statusLabels[status]} ({statusCounts[status]})
               </button>
             ))}
           </div>

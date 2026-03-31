@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useDeferredValue, useState } from 'react';
 import { PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, TrendingUp, Phone, Calendar, Filter } from 'lucide-react';
 import { useCallLogs, CallLogEntry, CallType } from '@/hooks/useCallLogs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -66,14 +66,39 @@ const CallActivity = ({ onCall }: CallActivityProps) => {
   const { callLogs, isLoading } = useCallLogs();
   const [typeFilter, setTypeFilter] = useState<CallType | 'all'>('all');
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all');
+  const deferredLogs = useDeferredValue(callLogs);
 
-  const filteredLogs = callLogs.filter((log) => {
+  const now = new Date();
+  const todayKey = now.toDateString();
+  const filteredLogs: CallLogEntry[] = [];
+  const stats = {
+    totalCalls: 0,
+    outgoing: 0,
+    incoming: 0,
+    missed: 0,
+    totalDuration: 0,
+    talkDuration: 0,
+    talkCount: 0,
+  };
+
+  for (const log of deferredLogs) {
+    const logDate = new Date(log.created_at);
+
+    if (logDate.toDateString() === todayKey) {
+      stats.totalCalls += 1;
+      stats.totalDuration += log.duration;
+      stats[log.type] += 1;
+
+      if (log.duration > 0) {
+        stats.talkDuration += log.duration;
+        stats.talkCount += 1;
+      }
+    }
+
     const matchesType = typeFilter === 'all' || log.type === typeFilter;
-
     let matchesDate = true;
+
     if (dateFilter !== 'all') {
-      const logDate = new Date(log.created_at);
-      const now = new Date();
       const diffDays = Math.floor((now.getTime() - logDate.getTime()) / (1000 * 60 * 60 * 24));
 
       if (dateFilter === 'today') matchesDate = diffDays === 0;
@@ -81,26 +106,12 @@ const CallActivity = ({ onCall }: CallActivityProps) => {
       else if (dateFilter === 'month') matchesDate = diffDays < 30;
     }
 
-    return matchesType && matchesDate;
-  });
+    if (matchesType && matchesDate) {
+      filteredLogs.push(log);
+    }
+  }
 
-  // Calculate stats
-  const todayLogs = callLogs.filter((log) => {
-    const logDate = new Date(log.created_at);
-    const today = new Date();
-    return logDate.toDateString() === today.toDateString();
-  });
-
-  const stats = {
-    totalCalls: todayLogs.length,
-    outgoing: todayLogs.filter((l) => l.type === 'outgoing').length,
-    incoming: todayLogs.filter((l) => l.type === 'incoming').length,
-    missed: todayLogs.filter((l) => l.type === 'missed').length,
-    totalDuration: todayLogs.reduce((sum, l) => sum + l.duration, 0),
-    avgDuration: todayLogs.length > 0
-      ? Math.round(todayLogs.reduce((sum, l) => sum + l.duration, 0) / todayLogs.filter(l => l.duration > 0).length) || 0
-      : 0,
-  };
+  const avgDuration = stats.talkCount > 0 ? Math.round(stats.talkDuration / stats.talkCount) : 0;
 
   const formatTotalDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -112,11 +123,11 @@ const CallActivity = ({ onCall }: CallActivityProps) => {
   return (
     <div className="pb-20">
       {/* Header */}
-      <div className="sticky top-0 bg-background/95 backdrop-blur-xl z-10 px-4 pt-6 pb-4">
+      <div className="sticky top-0 bg-background z-10 px-4 pt-6 pb-4 border-b border-border/60">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Call Activity</h1>
-            <p className="text-sm text-muted-foreground">{callLogs.length} total calls logged</p>
+            <p className="text-sm text-muted-foreground">{deferredLogs.length} total calls logged</p>
           </div>
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-success" />
@@ -168,7 +179,7 @@ const CallActivity = ({ onCall }: CallActivityProps) => {
             <div className="flex items-center gap-3">
               <TrendingUp className="w-5 h-5 text-muted-foreground" />
               <div>
-                <p className="text-sm font-medium text-foreground">{stats.avgDuration > 0 ? formatDuration(stats.avgDuration) : '0:00'}</p>
+                <p className="text-sm font-medium text-foreground">{avgDuration > 0 ? formatDuration(avgDuration) : '0:00'}</p>
                 <p className="text-[10px] text-muted-foreground">Avg duration</p>
               </div>
             </div>

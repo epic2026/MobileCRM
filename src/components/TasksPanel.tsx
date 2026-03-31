@@ -121,28 +121,54 @@ const TasksPanel = () => {
     }
   };
 
-  const filteredTasks = tasks.filter(task => {
-    if (filter === 'all') return true;
-    return task.status === filter;
-  });
+  const now = new Date();
+  const statusCounts = {
+    pending: 0,
+    in_progress: 0,
+    completed: 0,
+    cancelled: 0,
+  };
+  const filteredTasks: Task[] = [];
+  const overdueTasks: Task[] = [];
+  const upcomingTasks: Task[] = [];
+  const completedTasks: Task[] = [];
+  const otherTasks: Task[] = [];
 
-  const overdueTasks = filteredTasks.filter(task => {
-    if (!task.due_date || task.status === 'completed' || task.status === 'cancelled') return false;
-    return new Date(task.due_date) < new Date();
-  });
+  for (const task of tasks) {
+    statusCounts[task.status] += 1;
 
-  const upcomingTasks = filteredTasks.filter(task => {
-    if (!task.due_date || task.status === 'completed' || task.status === 'cancelled') return false;
-    return new Date(task.due_date) >= new Date();
-  });
+    if (filter !== 'all' && task.status !== filter) {
+      continue;
+    }
 
-  const completedTasks = filteredTasks.filter(task => task.status === 'completed');
-  const otherTasks = filteredTasks.filter(task => !task.due_date && task.status !== 'completed' && task.status !== 'cancelled');
+    filteredTasks.push(task);
+
+    if (task.status === 'completed') {
+      completedTasks.push(task);
+      continue;
+    }
+
+    if (task.status === 'cancelled') {
+      continue;
+    }
+
+    if (!task.due_date) {
+      otherTasks.push(task);
+      continue;
+    }
+
+    if (new Date(task.due_date) < now) {
+      overdueTasks.push(task);
+      continue;
+    }
+
+    upcomingTasks.push(task);
+  }
 
   return (
     <div className="pb-20">
       {/* Header */}
-      <div className="sticky top-0 bg-background/95 backdrop-blur-xl z-10 px-4 pt-6 pb-4">
+      <div className="sticky top-0 bg-background z-10 px-4 pt-6 pb-4 border-b border-border/60">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Tasks</h1>
@@ -153,11 +179,11 @@ const TasksPanel = () => {
         {/* Stats */}
         <div className="grid grid-cols-4 gap-2 mb-4">
           <div className="glass-card p-3 text-center">
-            <p className="text-lg font-bold text-warning">{tasks.filter(t => t.status === 'pending').length}</p>
+            <p className="text-lg font-bold text-warning">{statusCounts.pending}</p>
             <p className="text-[10px] text-muted-foreground">Pending</p>
           </div>
           <div className="glass-card p-3 text-center">
-            <p className="text-lg font-bold text-primary">{tasks.filter(t => t.status === 'in_progress').length}</p>
+            <p className="text-lg font-bold text-primary">{statusCounts.in_progress}</p>
             <p className="text-[10px] text-muted-foreground">In Progress</p>
           </div>
           <div className="glass-card p-3 text-center">
@@ -165,7 +191,7 @@ const TasksPanel = () => {
             <p className="text-[10px] text-muted-foreground">Overdue</p>
           </div>
           <div className="glass-card p-3 text-center">
-            <p className="text-lg font-bold text-success">{completedTasks.length}</p>
+            <p className="text-lg font-bold text-success">{statusCounts.completed}</p>
             <p className="text-[10px] text-muted-foreground">Completed</p>
           </div>
         </div>

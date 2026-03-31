@@ -1,8 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 @layer base {
   :root {
@@ -112,12 +112,13 @@
     @apply bg-background text-foreground font-sans antialiased;
     margin: 0;
     font-family: 'Inter', sans-serif;
+    overscroll-behavior-y: none;
   }
 }
 
 @layer components {
   .glass-card {
-    @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-xl;
+    @apply bg-card/95 border border-border/60 rounded-xl;
     box-shadow: var(--shadow-card);
   }
 

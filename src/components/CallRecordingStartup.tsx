@@ -19,9 +19,15 @@ const CallRecordingStartup = () => {
     if (!isNativeApp() || !user || hasRunRef.current) return;
     hasRunRef.current = true;
 
+    let timeoutId: number | undefined;
+    let frameId: number | undefined;
+    let cancelled = false;
+
     const runStartupImport = async () => {
       try {
         const granted = await ensureMediaAudioPermission();
+        if (cancelled) return;
+
         if (!granted) {
           toast({
             title: 'Auto-import complete',
@@ -35,6 +41,8 @@ const CallRecordingStartup = () => {
 
         let importedCount = 0;
         for (const recording of autoImportCandidates) {
+          if (cancelled) return;
+
           try {
             const imported = await importSystemRecording({
               recording,
@@ -44,6 +52,9 @@ const CallRecordingStartup = () => {
               analyzeRecording: analyzeRecording.mutate,
             });
             if (imported) importedCount += 1;
+            await new Promise((resolve) => {
+              timeoutId = window.setTimeout(resolve, 0);
+            });
           } catch (error) {
             console.error('Startup auto-import failed for', recording.fileName, error);
           }
@@ -63,7 +74,23 @@ const CallRecordingStartup = () => {
       }
     };
 
-    void runStartupImport();
+    frameId = window.requestAnimationFrame(() => {
+      timeoutId = window.setTimeout(() => {
+        if (!cancelled) {
+          void runStartupImport();
+        }
+      }, 400);
+    });
+
+    return () => {
+      cancelled = true;
+      if (frameId !== undefined) {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, [analyzeRecording.mutate, createRecording.mutateAsync, toast, uploadRecording, user]);
 
   return null;

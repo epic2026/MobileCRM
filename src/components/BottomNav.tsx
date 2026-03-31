@@ -1,5 +1,4 @@
 import { Settings, Target, Activity, ListTodo } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 interface BottomNavProps {
   activeTab: string;
@@ -15,7 +14,7 @@ const navItems = [
 
 const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border z-50 pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed bottom-0 left-0 right-0 bg-card/98 border-t border-border z-50 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgba(0,0,0,0.08)]">
       <div className="w-full max-w-md mx-auto flex justify-around items-center h-16 px-2">
         {navItems.map((item) => {
           const isActive = activeTab === item.id;
@@ -26,11 +25,7 @@ const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => {
               className="relative flex flex-col items-center justify-center w-16 h-full"
             >
               {isActive && (
-                <motion.div
-                  layoutId="activeTab"
-                  className="absolute -top-0.5 w-8 h-1 bg-primary rounded-full"
-                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                />
+                <div className="absolute -top-0.5 w-8 h-1 bg-primary rounded-full transition-[left,right,width] duration-200" />
               )}
               <item.icon
                 className={`w-5 h-5 transition-colors ${
