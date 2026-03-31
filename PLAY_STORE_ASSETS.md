@@ -102,10 +102,23 @@ You'll need to capture screenshots from your running app:
 
 ## Build & Upload
 
+### Configure signing once
+
+1. Create your upload keystore (one-time):
+```bash
+keytool -genkeypair -v -keystore android/upload-keystore.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+2. Create signing config file:
+```bash
+cp android/keystore.properties.example android/keystore.properties
+```
+
+3. Edit `android/keystore.properties` with real passwords and alias.
+
 1. Generate a signed release APK or AAB:
 ```bash
-cd android
-./gradlew bundleRelease
+npm run release:aab
 ```
 
 2. The AAB file will be at: `android/app/build/outputs/bundle/release/app-release.aab`

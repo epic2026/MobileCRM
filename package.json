@@ -10,7 +10,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release:aab": "bash scripts/release-android-aab.sh",
+    "loadtest:smoke": "k6 run load-testing/scenarios/api-smoke.js",
+    "loadtest:free": "k6 run load-testing/scenarios/free-ramp.js",
+    "loadtest:mau": "k6 run load-testing/scenarios/mau-model.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.1",

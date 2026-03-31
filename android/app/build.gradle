@@ -1,6 +1,19 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def releaseStoreFile = keystoreProperties.getProperty('storeFile') ?: System.getenv('ANDROID_STORE_FILE')
+def releaseStorePassword = keystoreProperties.getProperty('storePassword') ?: System.getenv('ANDROID_STORE_PASSWORD')
+def releaseKeyAlias = keystoreProperties.getProperty('keyAlias') ?: System.getenv('ANDROID_KEY_ALIAS')
+def releaseKeyPassword = keystoreProperties.getProperty('keyPassword') ?: System.getenv('ANDROID_KEY_PASSWORD')
+
+def hasReleaseSigning = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
 android {
     namespace = "com.lovable.mobilecrmwithsimcalls"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -21,11 +34,34 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
         }
     }
 
     kotlinOptions {
         jvmTarget = '17'
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    if ((graph.hasTask(':app:bundleRelease') || graph.hasTask(':app:assembleRelease')) && !hasReleaseSigning) {
+        throw new GradleException(
+            "Release signing is not configured. Create android/keystore.properties (see keystore.properties.example) " +
+            "or set ANDROID_STORE_FILE, ANDROID_STORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD."
+        )
     }
 }
 

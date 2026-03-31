@@ -24,3 +24,12 @@ dist-ssr
 *.sw?
 .vercel
 .env*.local
+
+# Android release signing secrets
+android/keystore.properties
+android/*.jks
+android/*.keystore
+
+# Local/generated test artifacts
+load-testing/data/users.json
+supabase/.temp/

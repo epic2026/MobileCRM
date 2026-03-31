@@ -71,3 +71,27 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Android Release (Play Store)
+
+1. Create an upload keystore once:
+
+```sh
+keytool -genkeypair -v -keystore android/upload-keystore.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+2. Create local signing config (do not commit real secrets):
+
+```sh
+cp android/keystore.properties.example android/keystore.properties
+```
+
+3. Fill `android/keystore.properties` values and run:
+
+```sh
+npm run release:aab
+```
+
+4. Upload the generated AAB:
+
+- `android/app/build/outputs/bundle/release/app-release.aab`
