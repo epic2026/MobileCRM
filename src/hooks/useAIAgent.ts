@@ -168,16 +168,33 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
       historyRef.current = [...historyRef.current, { role: 'user', content: text.trim() }];
 
       try {
+        // Get current session to ensure auth token is fresh
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session) {
+          console.error('❌ Session error:', sessionError?.message || 'No session');
+          throw new Error('Not authenticated. Please log in again.');
+        }
+        console.log('✅ Session valid for user:', session.user.id);
+
+        console.log('🔄 Invoking ai-agent function...');
         const { data, error } = await supabase.functions.invoke('ai-agent', {
           body: {
             message: text.trim(),
             conversationHistory: historySnapshot.slice(-8),
           },
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
         });
 
         if (error) {
           console.error('❌ Function invocation error:', error.message);
-          throw error;
+          throw new Error(`Function error: ${error.message}`);
+        }
+
+        if (!data) {
+          console.error('❌ Empty response from function');
+          throw new Error('No response from ARIA. Please try again.');
         }
 
         console.log('✅ API response received:', {
