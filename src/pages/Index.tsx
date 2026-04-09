@@ -10,10 +10,14 @@ import CallActivity from '@/components/CallActivity';
 import CRMIntegrations from '@/components/CRMIntegrations';
 import SettingsPanel from '@/components/SettingsPanel';
 import CallRecordingStartup from '@/components/CallRecordingStartup';
+import AIAgentButton from '@/components/AIAgent/AIAgentButton';
+import AIAgentSheet from '@/components/AIAgent/AIAgentSheet';
 import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState('leads');
+  const [isAgentOpen, setIsAgentOpen] = useState(false);
+  const [manualImportTrigger, setManualImportTrigger] = useState(0);
   const { toast } = useToast();
 
   const handleTabChange = (tab: string) => {
@@ -104,13 +108,27 @@ const Index = () => {
 
   return (
     <MobileLayout>
-      <CallRecordingStartup />
+      <CallRecordingStartup manualImportTrigger={manualImportTrigger} />
       {activeTab === 'leads' && <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />}
       {activeTab === 'tasks' && <TasksPanel />}
       {activeTab === 'activity' && <CallActivity onCall={handleCall} />}
       {activeTab === 'integrations' && <CRMIntegrations />}
       {activeTab === 'settings' && <SettingsPanel />}
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
+      <AIAgentButton
+        onClick={() => setIsAgentOpen(true)}
+        isActive={isAgentOpen}
+      />
+      <AIAgentSheet
+        isOpen={isAgentOpen}
+        onClose={() => setIsAgentOpen(false)}
+        onCall={handleCall}
+        onWhatsApp={handleWhatsApp}
+        onImportRecordings={() => {
+          setIsAgentOpen(false);
+          setManualImportTrigger((n) => n + 1);
+        }}
+      />
     </MobileLayout>
   );
 };

@@ -9,7 +9,12 @@ import {
 } from '@/lib/callRecordingImport';
 import { isNativeApp } from '@/services/nativePlugins';
 
-const CallRecordingStartup = () => {
+interface CallRecordingStartupProps {
+  /** Increment this number to trigger a manual import (independent of startup auto-import). */
+  manualImportTrigger?: number;
+}
+
+const CallRecordingStartup = ({ manualImportTrigger = 0 }: CallRecordingStartupProps) => {
   const hasRunRef = useRef(false);
   const { user } = useAuth();
   const { uploadRecording, createRecording, analyzeRecording } = useCallRecordings();
@@ -93,6 +98,68 @@ const CallRecordingStartup = () => {
       }
     };
   }, [user?.id]);
+
+  // Manual import trigger (called by AI agent or user action)
+  useEffect(() => {
+    if (manualImportTrigger === 0 || !isNativeApp() || !user) return;
+
+    let cancelled = false;
+
+    const runManualImport = async () => {
+      try {
+        const granted = await ensureMediaAudioPermission();
+        if (cancelled) return;
+
+        if (!granted) {
+          toast({
+            title: 'Permission Required',
+            description: 'Please grant media audio permission to import recordings.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        const scanned = await performSystemRecordingScan({ userId: user.id });
+        const candidates = scanned.filter((r) => r.confidence !== 'low');
+
+        let importedCount = 0;
+        for (const recording of candidates) {
+          if (cancelled) return;
+          try {
+            const imported = await importSystemRecording({
+              recording,
+              userId: user.id,
+              uploadRecording,
+              createRecording: createRecording.mutateAsync,
+              analyzeRecording: analyzeRecording.mutate,
+            });
+            if (imported) importedCount += 1;
+          } catch (err) {
+            console.error('Manual import failed for', recording.fileName, err);
+          }
+        }
+
+        toast({
+          title: 'Import Complete',
+          description: `${importedCount} recording${importedCount === 1 ? '' : 's'} imported.`,
+        });
+      } catch (err) {
+        console.error('Manual recording import failed:', err);
+        toast({
+          title: 'Import Failed',
+          description: err instanceof Error ? err.message : 'Could not import recordings.',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    void runManualImport();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualImportTrigger]);
 
   return null;
 };
