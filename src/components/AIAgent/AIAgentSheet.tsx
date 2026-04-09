@@ -1,8 +1,16 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
-import { X, Send, Sparkles, Zap, CheckCircle2 } from 'lucide-react';
+import { X, Send, Sparkles, Zap, CheckCircle2, Mic, MicOff, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAIAgent, AgentActionType } from '@/hooks/useAIAgent';
 import { cn } from '@/lib/utils';
+
+// TypeScript declaration for speech recognition
+declare global {
+  interface Window {
+    webkitSpeechRecognition?: typeof SpeechRecognition;
+    SpeechRecognition?: typeof SpeechRecognition;
+  }
+}
 
 interface AIAgentSheetProps {
   isOpen: boolean;
@@ -53,8 +61,11 @@ const AIAgentSheet = ({
   onImportRecordings,
 }: AIAgentSheetProps) => {
   const [inputText, setInputText] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
   const messagesBottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
   const { messages, isLoading, sendMessage, clearConversation } = useAIAgent({
     onCall,
@@ -74,6 +85,81 @@ const AIAgentSheet = ({
       return () => window.clearTimeout(t);
     }
   }, [isOpen]);
+
+  // Initialize speech recognition once
+  useEffect(() => {
+    const SpeechRecog = window.webkitSpeechRecognition || window.SpeechRecognition;
+    if (!SpeechRecog) {
+      console.warn('Speech Recognition not supported in this browser');
+      return;
+    }
+
+    const recognition = new SpeechRecog();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-IN'; // Indian English for better context
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setVoiceError('');
+    };
+
+    recognition.onresult = (event) => {
+      let interimTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          setInputText((prev) => prev + transcript);
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+      // Show live transcription in input
+      if (interimTranscript) {
+        inputRef.current?.focus();
+      }
+    };
+
+    recognition.onerror = (event) => {
+      const errorMsg =
+        event.error === 'no-speech'
+          ? 'No speech detected. Try again.'
+          : event.error === 'network'
+            ? 'Network error. Check connection.'
+            : event.error === 'not-allowed'
+              ? 'Microphone permission denied.'
+              : `Voice error: ${event.error}`;
+      setVoiceError(errorMsg);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, []);
+
+  const handleVoiceStart = () => {
+    if (!recognitionRef.current) {
+      setVoiceError('Speech recognition not available on your device.');
+      return;
+    }
+    setVoiceError('');
+    recognitionRef.current.start();
+  };
+
+  const handleVoiceStop = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+  };
 
   const handleSend = () => {
     const text = inputText.trim();
@@ -274,28 +360,64 @@ const AIAgentSheet = ({
 
               {/* Input bar */}
               <div className="flex-shrink-0 px-4 pt-2 pb-3 border-t border-border">
+                {/* Voice error alert */}
+                {voiceError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2 mb-2"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                    <p className="text-xs text-rose-500">{voiceError}</p>
+                  </motion.div>
+                )}
+
                 <div className="flex items-center gap-2 bg-muted/40 rounded-2xl px-4 py-2.5 border border-border focus-within:border-violet-500/50 transition-colors">
-                  {/* Hint icon */}
-                  <Zap className="w-4 h-4 text-muted-foreground/60 flex-shrink-0" />
+                  {/* Hint / Voice indicator icon */}
+                  {isListening ? (
+                    <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 0.6, repeat: Infinity }}>
+                      <Mic className="w-4 h-4 text-violet-500 flex-shrink-0" />
+                    </motion.div>
+                  ) : (
+                    <Zap className="w-4 h-4 text-muted-foreground/60 flex-shrink-0" />
+                  )}
+
                   <input
                     ref={inputRef}
                     type="text"
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder='Try "Call Rahul" or "Update Priya to Qualified"'
+                    placeholder={isListening ? 'Listening...' : 'Type or tap 🎤 to speak'}
                     className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none min-w-0"
-                    disabled={isLoading}
+                    disabled={isLoading || isListening}
                     autoComplete="off"
                     autoCorrect="off"
                     spellCheck={false}
                   />
+
+                  {/* Voice button */}
                   <button
-                    onClick={handleSend}
-                    disabled={!inputText.trim() || isLoading}
+                    onClick={isListening ? handleVoiceStop : handleVoiceStart}
                     className={cn(
                       'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
-                      inputText.trim() && !isLoading
+                      isListening
+                        ? 'bg-violet-600 text-white shadow-[0_0_12px_rgba(139,92,246,0.6)]'
+                        : 'bg-muted text-muted-foreground hover:bg-muted-foreground/20',
+                    )}
+                    aria-label={isListening ? 'Stop listening' : 'Start voice input'}
+                  >
+                    {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                  </button>
+
+                  {/* Send button */}
+                  <button
+                    onClick={handleSend}
+                    disabled={!inputText.trim() || isLoading || isListening}
+                    className={cn(
+                      'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
+                      inputText.trim() && !isLoading && !isListening
                         ? 'bg-violet-600 text-white shadow-[0_0_8px_rgba(139,92,246,0.4)]'
                         : 'bg-muted text-muted-foreground',
                     )}
@@ -305,7 +427,7 @@ const AIAgentSheet = ({
                   </button>
                 </div>
                 <p className="text-[9px] text-muted-foreground/40 text-center mt-1.5">
-                  ARIA acts on your behalf — actions are executed immediately
+                  Speak naturally • ARIA auto-executes actions
                 </p>
               </div>
             </div>

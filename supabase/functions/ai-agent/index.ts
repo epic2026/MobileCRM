@@ -75,18 +75,22 @@ serve(async (req) => {
 
     const { data: { user }, error: authError } = await client.auth.getUser();
     if (authError || !user) {
+      console.error('🔴 Auth failed:', authError?.message || 'No user');
       return new Response("Unauthorized", { status: 401, headers: corsHeaders });
     }
+    console.log('✅ Auth OK for user:', user.id);
 
     const body = await req.json();
     const message: string = body.message || "";
     const conversationHistory: { role: string; content: string }[] = body.conversationHistory || [];
+    console.log('📨 User message:', message.slice(0, 80), '...');
 
     if (!message.trim()) {
       return new Response("Missing message", { status: 400, headers: corsHeaders });
     }
 
     // Fetch CRM context in parallel
+    console.log('🔍 Fetching CRM context...');
     const [leadsRes, activitiesRes, tasksRes] = await Promise.all([
       client
         .from("leads")
@@ -109,6 +113,7 @@ serve(async (req) => {
     const leads = leadsRes.data || [];
     const activities = activitiesRes.data || [];
     const tasks = tasksRes.data || [];
+    console.log(`📊 Context: ${leads.length} leads, ${activities.length} activities, ${tasks.length} tasks`);
 
     // Build concise context strings
     const leadLines = leads
@@ -186,8 +191,10 @@ ACTION PARAMS FORMAT:
 
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiKey) {
-      throw new Error("OPENAI_API_KEY secret not set in Supabase dashboard");
+      console.error('🔴 OPENAI_API_KEY not found in Supabase secrets');
+      throw new Error("OPENAI_API_KEY not configured. Add it to Supabase → Project Settings → Edge Functions → Secrets");
     }
+    console.log('✅ OpenAI key loaded');
 
     const aiMessages = [
       { role: "system", content: systemPrompt },
@@ -195,6 +202,7 @@ ACTION PARAMS FORMAT:
       { role: "user", content: message },
     ];
 
+    console.log('🚀 Calling OpenAI GPT-4o...');
     const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -213,11 +221,17 @@ ACTION PARAMS FORMAT:
 
     if (!openaiRes.ok) {
       const errText = await openaiRes.text();
-      throw new Error(`OpenAI API error ${openaiRes.status}: ${errText.slice(0, 400)}`);
+      console.error('🔴 OpenAI API failed:', openaiRes.status, errText.slice(0, 500));
+      throw new Error(`OpenAI ${openaiRes.status}: ${errText.slice(0, 200)}`);
     }
+    console.log('✅ OpenAI request successful');
 
     const openaiData = await openaiRes.json();
+    console.log('📦 OpenAI response received');
     const toolCall = openaiData.choices?.[0]?.message?.tool_calls?.[0];
+    if (!toolCall) {
+      console.error('🔴 No tool call in response. Full response:', JSON.stringify(openaiData).slice(0, 500));
+    }
 
     if (!toolCall?.function?.arguments) {
       throw new Error("Model returned no tool call");
@@ -226,7 +240,9 @@ ACTION PARAMS FORMAT:
     let result: { message: string; action: { type: string; params: Record<string, unknown> }; suggestions: string[] };
     try {
       result = JSON.parse(toolCall.function.arguments);
-    } catch {
+      console.log('✅ Parsed action:', result.action.type);
+    } catch (parseErr) {
+      console.error('🔴 Failed to parse arguments:', toolCall.function.arguments);
       throw new Error("Failed to parse tool call arguments");
     }
 
@@ -239,12 +255,19 @@ ACTION PARAMS FORMAT:
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("ai-agent error:", error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('❌ AI Agent Error:', errorMsg);
+    console.error('Error stack:', error instanceof Error ? error.stack : 'N/A');
+    
     return new Response(
       JSON.stringify({
-        message: "Sorry, I ran into an issue. Please try again in a moment.",
+        message: `Sorry, I ran into an issue: ${errorMsg.slice(0, 100)}. Please try again.`,
         action: { type: "none", params: {} },
         suggestions: ["Try again", "Check my leads", "View tasks"],
+        _debug: {
+          error: errorMsg,
+          timestamp: new Date().toISOString(),
+        },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

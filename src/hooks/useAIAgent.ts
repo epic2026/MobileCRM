@@ -175,7 +175,16 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
           },
         });
 
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Function invocation error:', error.message);
+          throw error;
+        }
+
+        console.log('✅ API response received:', {
+          hasMessage: !!data?.message,
+          hasAction: !!data?.action,
+          actionType: data?.action?.type,
+        });
 
         const action = data.action as AgentAction | undefined;
 
@@ -200,12 +209,24 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
           prev.map((m) => (m.id === loadingId ? assistantMsg : m)),
         );
       } catch (err) {
-        console.error('AI agent error:', err);
+        const fullError = err instanceof Error ? err.message : String(err);
+        console.error('🔴 AI agent error:', fullError);
+        console.error('Full error object:', err);
+
+        const errorDetails =
+          fullError.includes('OPENAI_API_KEY') || fullError.includes('not configured')
+            ? 'Missing OpenAI API key. Add OPENAI_API_KEY to Supabase Dashboard → Edge Functions → Secrets.'
+            : fullError.includes('Unauthorized') || fullError.includes('401')
+              ? 'Authentication failed. Check your login.'
+              : fullError.includes('fetch')
+                ? 'Network error. Check your internet connection.'
+                : `Error: ${fullError.slice(0, 80)}`;
+
         const errorMsg: AgentMessage = {
           id: loadingId,
           role: 'assistant',
-          content: "Sorry, I couldn't process that. Please try again.",
-          suggestions: ['Try rephrasing', 'Check my leads'],
+          content: `⚠️ ${errorDetails}`,
+          suggestions: ['Try again', 'Check logs in browser console'],
           timestamp: new Date(),
         };
         setMessages((prev) =>
