@@ -1,4 +1,4 @@
-import { Settings, Target, Activity, ListTodo } from 'lucide-react';
+import { Settings, Target, Bell, ListTodo } from 'lucide-react';
 
 interface BottomNavProps {
   activeTab: string;
@@ -8,7 +8,7 @@ interface BottomNavProps {
 const navItems = [
   { id: 'leads', icon: Target, label: 'Leads' },
   { id: 'tasks', icon: ListTodo, label: 'Tasks' },
-  { id: 'activity', icon: Activity, label: 'Activity' },
+  { id: 'notifications', icon: Bell, label: 'Notifications' },
   { id: 'settings', icon: Settings, label: 'Settings' },
 ];
 

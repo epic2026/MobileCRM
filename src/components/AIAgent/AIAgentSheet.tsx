@@ -568,43 +568,28 @@ const AIAgentSheet = ({
                   </motion.div>
                 )}
 
-                <button
-                  onClick={isListening ? handleVoiceStop : () => void handleVoiceStart(false)}
-                  disabled={isLoading}
-                  className={cn(
-                    'w-full rounded-2xl border px-4 py-4 transition-all',
-                    isListening
-                      ? 'border-violet-500 bg-violet-600 text-white shadow-[0_0_18px_rgba(139,92,246,0.35)]'
-                      : 'border-violet-300/50 bg-violet-50 hover:bg-violet-100 text-violet-950',
-                    isLoading && 'cursor-not-allowed opacity-60',
-                  )}
-                  aria-label={isListening ? 'Stop listening' : 'Tap to speak'}
-                >
-                  <div className="flex items-center justify-center gap-3">
-                    <div
-                      className={cn(
-                        'flex h-12 w-12 items-center justify-center rounded-full',
-                        isListening ? 'bg-white/20' : 'bg-violet-600 text-white',
-                      )}
-                    >
-                      {isListening ? (
-                        <motion.div animate={{ scale: [1, 1.18, 1] }} transition={{ duration: 0.8, repeat: Infinity }}>
-                          <MicOff className="h-5 w-5" />
-                        </motion.div>
-                      ) : (
-                        <Mic className="h-5 w-5" />
-                      )}
-                    </div>
-                    <p className={cn('text-base font-semibold', isListening ? 'text-white' : 'text-violet-950')}>
-                      {isListening ? 'Listening... tap to stop' : 'Tap to speak'}
-                    </p>
-                  </div>
-                </button>
-                <p className="text-[9px] text-muted-foreground/40 text-center mt-2">
-                  {isNativeApp() || hasBrowserSpeechSupport
-                    ? 'Speak naturally. ARIA will execute supported CRM actions automatically.'
-                    : 'Voice input is unavailable on this device.'}
-                </p>
+                <div className="flex justify-center">
+                  <button
+                    onClick={isListening ? handleVoiceStop : () => void handleVoiceStart(false)}
+                    disabled={isLoading}
+                    className={cn(
+                      'h-16 w-16 rounded-full border transition-all flex items-center justify-center',
+                      isListening
+                        ? 'border-violet-500 bg-violet-600 text-white shadow-[0_0_18px_rgba(139,92,246,0.35)]'
+                        : 'border-violet-300/50 bg-violet-50 hover:bg-violet-100 text-violet-700',
+                      isLoading && 'cursor-not-allowed opacity-60',
+                    )}
+                    aria-label={isListening ? 'Stop listening' : 'Tap to speak'}
+                  >
+                    {isListening ? (
+                      <motion.div animate={{ scale: [1, 1.18, 1] }} transition={{ duration: 0.8, repeat: Infinity }}>
+                        <MicOff className="h-6 w-6" />
+                      </motion.div>
+                    ) : (
+                      <Mic className="h-6 w-6" />
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </motion.div>

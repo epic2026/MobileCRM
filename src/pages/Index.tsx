@@ -6,7 +6,7 @@ import MobileLayout from '@/components/MobileLayout';
 import BottomNav from '@/components/BottomNav';
 import LeadsPanel from '@/components/LeadsPanel';
 import TasksPanel from '@/components/TasksPanel';
-import CallActivity from '@/components/CallActivity';
+import NotificationsPanel from '@/components/NotificationsPanel';
 import CRMIntegrations from '@/components/CRMIntegrations';
 import SettingsPanel from '@/components/SettingsPanel';
 import CallRecordingStartup from '@/components/CallRecordingStartup';
@@ -15,7 +15,7 @@ import AIAgentSheet from '@/components/AIAgent/AIAgentSheet';
 import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
-  const [activeTab, setActiveTab] = useState('leads');
+  const [activeTab, setActiveTab] = useState('tasks');
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [manualImportTrigger, setManualImportTrigger] = useState(0);
   const { toast } = useToast();
@@ -111,7 +111,7 @@ const Index = () => {
       <CallRecordingStartup manualImportTrigger={manualImportTrigger} />
       {activeTab === 'leads' && <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />}
       {activeTab === 'tasks' && <TasksPanel />}
-      {activeTab === 'activity' && <CallActivity onCall={handleCall} />}
+      {activeTab === 'notifications' && <NotificationsPanel />}
       {activeTab === 'integrations' && <CRMIntegrations />}
       {activeTab === 'settings' && <SettingsPanel />}
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
