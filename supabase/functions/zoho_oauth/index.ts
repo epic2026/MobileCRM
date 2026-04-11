@@ -57,8 +57,12 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  const url = new URL(req.url);
-  const callbackUrl = `${url.origin}${url.pathname}`;
+  // Derive the public callback URL from SUPABASE_URL env variable.
+  // SUPABASE_URL = https://<ref>.supabase.co → functions live at https://<ref>.functions.supabase.co
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  const callbackUrl = supabaseUrl
+    ? supabaseUrl.replace("https://", "https://").replace(".supabase.co", ".functions.supabase.co") + "/zoho_oauth"
+    : (() => { const u = new URL(req.url); return `${u.origin}${u.pathname}`; })();
 
   if (req.method === "GET") {
     const code = url.searchParams.get("code");
