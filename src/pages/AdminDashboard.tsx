@@ -10,6 +10,32 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+  CommandShortcut,
+} from '@/components/ui/command';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Table,
   TableBody,
@@ -56,10 +82,20 @@ import {
   Upload,
   LayoutDashboard,
   Activity,
+  Bell,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  MessageSquare,
   Phone,
+  PhoneCall,
   Link2,
+  Search,
   RefreshCw,
   SendHorizontal,
+  AlertTriangle,
+  CircleAlert,
+  CircleCheck,
 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
@@ -96,6 +132,16 @@ type ZohoConnectionStatus = {
   accountsServer: string;
   scope: string | null;
   expiresAt: string | null;
+};
+
+type SyncLogItem = {
+  id: string;
+  time: string;
+  mode: 'tasks' | 'activities' | 'manual';
+  success: number;
+  failed: number;
+  status: 'success' | 'warning' | 'error';
+  details?: Array<{ id: string; reason: string }>;
 };
 
 const AdminDashboard = () => {
@@ -139,7 +185,16 @@ const AdminDashboard = () => {
   const [globalDateFrom, setGlobalDateFrom] = useState(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [globalDateTo, setGlobalDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [globalOwnerId, setGlobalOwnerId] = useState('all');
-  const [callReportView, setCallReportView] = useState<'user' | 'lead' | 'calendar'>('user');
+  const [callReportView, setCallReportView] = useState<'overview' | 'user' | 'logs'>('overview');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [leadStatusFilter, setLeadStatusFilter] = useState<'all' | 'new' | 'contacted' | 'qualified' | 'proposal' | 'won' | 'lost'>('all');
+  const [leadSearch, setLeadSearch] = useState('');
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [leadDetailId, setLeadDetailId] = useState<string | null>(null);
+  const [syncLogs, setSyncLogs] = useState<SyncLogItem[]>([]);
+  const [usersPage, setUsersPage] = useState(1);
+  const usersPageSize = 10;
 
   useEffect(() => {
     if (!isLoading && (!user || role !== 'admin')) {
@@ -163,6 +218,17 @@ const AdminDashboard = () => {
   useEffect(() => {
     window.localStorage.setItem('admin-zoho-connector', JSON.stringify(zohoConnector));
   }, [zohoConnector]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ['admin-users'],
@@ -388,6 +454,39 @@ const AdminDashboard = () => {
       connectedCalls,
     };
   }, [filteredCallLogs, filteredLeads, globalOwnerId, leadTasks, userMap]);
+
+  const leadRows = useMemo(() => {
+    const searchText = leadSearch.trim().toLowerCase();
+    return filteredLeads
+      .filter((lead) => leadStatusFilter === 'all' || lead.status === leadStatusFilter)
+      .filter((lead) => {
+        if (!searchText) return true;
+        const haystack = `${lead.name} ${lead.email || ''} ${lead.phone || ''} ${lead.company || ''}`.toLowerCase();
+        return haystack.includes(searchText);
+      })
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [filteredLeads, leadSearch, leadStatusFilter]);
+
+  const selectedLeadRows = useMemo(
+    () => leadRows.filter((lead) => selectedLeadIds.includes(lead.id)),
+    [leadRows, selectedLeadIds],
+  );
+
+  const leadDetail = useMemo(
+    () => leads.find((entry) => entry.id === leadDetailId) || null,
+    [leadDetailId, leads],
+  );
+
+  const paginatedUsers = useMemo(() => {
+    const start = (usersPage - 1) * usersPageSize;
+    return users.slice(start, start + usersPageSize);
+  }, [users, usersPage]);
+
+  const usersPageCount = Math.max(1, Math.ceil(users.length / usersPageSize));
+
+  useEffect(() => {
+    setUsersPage((current) => Math.min(current, usersPageCount));
+  }, [usersPageCount]);
 
   const formatCallDuration = (seconds: number) => {
     const safeSeconds = Math.max(0, Math.round(seconds || 0));
@@ -693,12 +792,36 @@ const AdminDashboard = () => {
       return data as { success: number; failed: number; details?: Array<{ id: string; reason: string }> };
     },
     onSuccess: (result, variables) => {
+      setSyncLogs((prev) => [
+        {
+          id: crypto.randomUUID(),
+          time: new Date().toISOString(),
+          mode: variables.mode,
+          success: result.success,
+          failed: result.failed,
+          status: result.failed > 0 ? 'warning' : 'success',
+          details: result.details,
+        },
+        ...prev,
+      ].slice(0, 20));
       toast({
         title: variables.mode === 'tasks' ? 'Zoho task sync complete' : 'Zoho activity sync complete',
         description: `${result.success} pushed, ${result.failed} failed.`,
       });
     },
     onError: (error: Error) => {
+      setSyncLogs((prev) => [
+        {
+          id: crypto.randomUUID(),
+          time: new Date().toISOString(),
+          mode: 'manual',
+          success: 0,
+          failed: 0,
+          status: 'error',
+          details: [{ id: 'sync-error', reason: error.message }],
+        },
+        ...prev,
+      ].slice(0, 20));
       toast({ title: 'Zoho sync failed', description: error.message, variant: 'destructive' });
     },
     onSettled: (_data, _error, variables) => {
@@ -865,33 +988,61 @@ const AdminDashboard = () => {
                 <CardDescription>Priority operational issues from the selected filter scope.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                {(dashboardInsights.callsWithoutFollowup > 25 || dashboardInsights.overdueTasks > 12 || dashboardInsights.staleLeads > 20) && (
+                  <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    <p className="flex items-center gap-2 font-medium">
+                      <AlertTriangle className="h-4 w-4" />
+                      Critical attention needed
+                    </p>
+                    <p className="mt-1 text-xs">At least one key metric crossed a high-risk threshold in current filter scope.</p>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
                   <div>
-                    <p className="text-sm font-medium">Missed/Unanswered Without Follow-up</p>
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      <CircleAlert className="h-4 w-4 text-amber-600" />
+                      Missed/Unanswered Without Follow-up
+                    </p>
                     <p className="text-xs text-muted-foreground">Calls needing immediate task creation.</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <p className="text-lg font-semibold">{dashboardInsights.callsWithoutFollowup}</p>
+                    <Badge variant={dashboardInsights.callsWithoutFollowup > 25 ? 'destructive' : 'secondary'}>
+                      {dashboardInsights.callsWithoutFollowup > 25 ? 'High' : 'Medium'}
+                    </Badge>
                     <Button size="sm" variant="outline" onClick={() => setActiveSection('call-activity')}>Review</Button>
                   </div>
                 </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <div className="flex items-center justify-between rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2">
                   <div>
-                    <p className="text-sm font-medium">Overdue Tasks</p>
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      <CircleAlert className="h-4 w-4 text-orange-600" />
+                      Overdue Tasks
+                    </p>
                     <p className="text-xs text-muted-foreground">Pending items past due date.</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <p className="text-lg font-semibold">{dashboardInsights.overdueTasks}</p>
+                    <Badge variant={dashboardInsights.overdueTasks > 12 ? 'destructive' : 'secondary'}>
+                      {dashboardInsights.overdueTasks > 12 ? 'High' : 'Medium'}
+                    </Badge>
                     <Button size="sm" variant="outline" onClick={() => setActiveSection('settings')}>Open</Button>
                   </div>
                 </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <div className="flex items-center justify-between rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
                   <div>
-                    <p className="text-sm font-medium">Stale Leads</p>
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      <CircleCheck className="h-4 w-4 text-emerald-600" />
+                      Stale Leads
+                    </p>
                     <p className="text-xs text-muted-foreground">Leads with no update in the last 14 days.</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <p className="text-lg font-semibold">{dashboardInsights.staleLeads}</p>
+                    <Badge variant={dashboardInsights.staleLeads > 20 ? 'secondary' : 'outline'}>
+                      {dashboardInsights.staleLeads > 20 ? 'Watch' : 'Normal'}
+                    </Badge>
                     <Button size="sm" variant="outline" onClick={() => setActiveSection('leads')}>Act</Button>
                   </div>
                 </div>
@@ -962,9 +1113,171 @@ const AdminDashboard = () => {
           </Dialog>
         </CardHeader>
         <CardContent className="pt-4">
-          <LeadAssignment />
+          <div className="space-y-4">
+            <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search leads by name, email, phone, company"
+                  className="pl-9"
+                  value={leadSearch}
+                  onChange={(event) => setLeadSearch(event.target.value)}
+                />
+              </div>
+              <Select value={leadStatusFilter} onValueChange={(value: typeof leadStatusFilter) => setLeadStatusFilter(value)}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="new">New</SelectItem>
+                  <SelectItem value="contacted">Contacted</SelectItem>
+                  <SelectItem value="qualified">Qualified</SelectItem>
+                  <SelectItem value="proposal">Proposal</SelectItem>
+                  <SelectItem value="won">Won</SelectItem>
+                  <SelectItem value="lost">Lost</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={() => { setLeadStatusFilter('all'); setLeadSearch(''); }}>
+                <Filter className="mr-2 h-4 w-4" />
+                Clear
+              </Button>
+            </div>
+
+            {selectedLeadIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2">
+                <Badge variant="secondary">{selectedLeadIds.length} selected</Badge>
+                <Button size="sm" variant="outline">Assign</Button>
+                <Button size="sm" variant="outline">
+                  <PhoneCall className="mr-1 h-3 w-3" />
+                  Call
+                </Button>
+                <Button size="sm" variant="outline">
+                  <MessageSquare className="mr-1 h-3 w-3" />
+                  Message
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedLeadIds([])}>Clear selection</Button>
+              </div>
+            )}
+
+            <div className="overflow-hidden rounded-xl border">
+              <div className="max-h-[560px] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-card">
+                    <TableRow>
+                      <TableHead className="w-[40px]">
+                        <input
+                          type="checkbox"
+                          checked={leadRows.length > 0 && selectedLeadIds.length === leadRows.length}
+                          onChange={(event) => {
+                            if (event.target.checked) {
+                              setSelectedLeadIds(leadRows.map((lead) => lead.id));
+                            } else {
+                              setSelectedLeadIds([]);
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead>Lead</TableHead>
+                      <TableHead>Company</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Owner</TableHead>
+                      <TableHead>Created</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {leadRows.map((lead) => {
+                      const owner = lead.user_id
+                        ? userMap.get(lead.user_id)?.full_name || userMap.get(lead.user_id)?.email || 'Assigned user'
+                        : 'Unassigned';
+                      return (
+                        <TableRow key={lead.id}>
+                          <TableCell>
+                            <input
+                              type="checkbox"
+                              checked={selectedLeadIds.includes(lead.id)}
+                              onChange={(event) => {
+                                if (event.target.checked) {
+                                  setSelectedLeadIds((prev) => [...prev, lead.id]);
+                                } else {
+                                  setSelectedLeadIds((prev) => prev.filter((id) => id !== lead.id));
+                                }
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <p className="font-medium">{lead.name}</p>
+                            <p className="text-xs text-muted-foreground">{lead.phone}</p>
+                            {lead.email && <p className="text-xs text-muted-foreground">{lead.email}</p>}
+                          </TableCell>
+                          <TableCell>{lead.company || '-'}</TableCell>
+                          <TableCell>
+                            <Badge variant={lead.status === 'won' ? 'default' : lead.status === 'lost' ? 'destructive' : 'secondary'}>
+                              {lead.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{owner}</TableCell>
+                          <TableCell>{format(new Date(lead.created_at), 'dd MMM yyyy')}</TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <Button size="sm" variant="outline" onClick={() => setLeadDetailId(lead.id)}>Open</Button>
+                              <Button size="sm" variant="outline"><PhoneCall className="h-3 w-3" /></Button>
+                              <Button size="sm" variant="outline"><MessageSquare className="h-3 w-3" /></Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {leadRows.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                          No leads match current filters.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            <div className="rounded-xl border p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assignment Workspace</p>
+              <LeadAssignment />
+            </div>
+          </div>
         </CardContent>
       </Card>
+
+      <Sheet open={!!leadDetailId} onOpenChange={(open) => !open && setLeadDetailId(null)}>
+        <SheetContent side="right" className="sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>{leadDetail?.name || 'Lead Details'}</SheetTitle>
+            <SheetDescription>Quick detail panel for rapid lead actions.</SheetDescription>
+          </SheetHeader>
+          {leadDetail ? (
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Contact</p>
+                <p className="font-medium">{leadDetail.phone}</p>
+                {leadDetail.email && <p className="text-muted-foreground">{leadDetail.email}</p>}
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Company</p>
+                <p className="font-medium">{leadDetail.company || '-'}</p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
+                <Badge>{leadDetail.status}</Badge>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Notes</p>
+                <p className="whitespace-pre-wrap text-muted-foreground">{leadDetail.notes || 'No notes available.'}</p>
+              </div>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 
@@ -1037,28 +1350,58 @@ const AdminDashboard = () => {
             </Card>
           </div>
 
-          <div className="inline-flex rounded-lg border bg-card p-1">
-            <button
-              onClick={() => setCallReportView('user')}
-              className={`rounded-md px-3 py-1.5 text-sm ${callReportView === 'user' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-            >
-              By User
-            </button>
-            <button
-              onClick={() => setCallReportView('lead')}
-              className={`rounded-md px-3 py-1.5 text-sm ${callReportView === 'lead' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-            >
-              By Lead
-            </button>
-            <button
-              onClick={() => setCallReportView('calendar')}
-              className={`rounded-md px-3 py-1.5 text-sm ${callReportView === 'calendar' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-            >
-              By Calendar
-            </button>
-          </div>
+          <Tabs value={callReportView} onValueChange={(value) => setCallReportView(value as typeof callReportView)}>
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="user">User Performance</TabsTrigger>
+              <TabsTrigger value="logs">Call Logs</TabsTrigger>
+            </TabsList>
 
-          {callReportView === 'user' && (
+            <TabsContent value="overview">
+              <div className="grid gap-4 xl:grid-cols-3">
+                <Card className="border-border/70 xl:col-span-2">
+                  <CardHeader>
+                    <CardTitle className="text-base">Calls vs Connected Trend</CardTitle>
+                    <CardDescription>Daily momentum of activity and outcomes.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {callActivityReport.byCalendar.slice(0, 10).map((entry) => {
+                        const total = Math.max(entry.totalCalls, 1);
+                        const connectedWidth = `${Math.round((entry.connectedCalls / total) * 100)}%`;
+                        return (
+                          <div key={`trend-${entry.date}`}>
+                            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{format(new Date(entry.date), 'dd MMM')}</span>
+                              <span>{entry.connectedCalls}/{entry.totalCalls}</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-muted">
+                              <div className="h-2 rounded-full bg-primary" style={{ width: connectedWidth }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/70">
+                  <CardHeader>
+                    <CardTitle className="text-base">Leaderboard</CardTitle>
+                    <CardDescription>Top call performers by volume.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {callActivityReport.byUser.slice(0, 5).map((entry, index) => (
+                      <div key={`lb-${entry.user}`} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                        <span className="font-medium">#{index + 1} {entry.user}</span>
+                        <Badge variant="secondary">{entry.totalCalls}</Badge>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="user">
             <Card className="border-border/70">
               <CardHeader>
                 <CardTitle className="text-base">User Performance View</CardTitle>
@@ -1100,43 +1443,41 @@ const AdminDashboard = () => {
                 </div>
               </CardContent>
             </Card>
-          )}
+            </TabsContent>
 
-          {callReportView === 'lead' && (
+            <TabsContent value="logs">
             <Card className="border-border/70">
               <CardHeader>
-                <CardTitle className="text-base">Lead Engagement View</CardTitle>
-                <CardDescription>Track interaction intensity, ownership, and follow-up freshness by lead.</CardDescription>
+                <CardTitle className="text-base">Call Logs</CardTitle>
+                <CardDescription>Detailed logs for QA, coaching, and audit.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="max-h-[460px] overflow-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>Time</TableHead>
+                        <TableHead>User</TableHead>
                         <TableHead>Lead / Contact</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>Owner</TableHead>
-                        <TableHead>Calls</TableHead>
-                        <TableHead>Connected</TableHead>
-                        <TableHead>Talk Time</TableHead>
-                        <TableHead>Last Call</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Duration</TableHead>
+                        <TableHead>Outcome</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {callActivityReport.byLead.map((entry) => (
-                        <TableRow key={`${entry.lead}-${entry.phone}`}>
-                          <TableCell className="font-medium">{entry.lead}</TableCell>
-                          <TableCell>{entry.phone}</TableCell>
-                          <TableCell>{entry.owner}</TableCell>
-                          <TableCell>{entry.totalCalls}</TableCell>
-                          <TableCell>{entry.connectedCalls}</TableCell>
-                          <TableCell>{formatCallDuration(entry.durationSeconds)}</TableCell>
-                          <TableCell>{format(new Date(entry.lastCallAt), 'dd MMM yyyy, h:mm a')}</TableCell>
+                      {callActivityReport.filtered.map((entry) => (
+                        <TableRow key={entry.id}>
+                          <TableCell>{format(new Date(entry.created_at), 'dd MMM yyyy, h:mm a')}</TableCell>
+                          <TableCell>{entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System'}</TableCell>
+                          <TableCell>{entry.lead_id ? leadMap.get(entry.lead_id)?.name || entry.contact_name || entry.phone : entry.contact_name || entry.phone}</TableCell>
+                          <TableCell><Badge variant="secondary">{entry.type}</Badge></TableCell>
+                          <TableCell>{formatCallDuration(entry.duration || 0)}</TableCell>
+                          <TableCell>{entry.outcome || '-'}</TableCell>
                         </TableRow>
                       ))}
-                      {callActivityReport.byLead.length === 0 && (
+                      {callActivityReport.filtered.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center text-muted-foreground">No lead call data in selected range.</TableCell>
+                          <TableCell colSpan={6} className="text-center text-muted-foreground">No call logs in selected range.</TableCell>
                         </TableRow>
                       )}
                     </TableBody>
@@ -1144,51 +1485,8 @@ const AdminDashboard = () => {
                 </div>
               </CardContent>
             </Card>
-          )}
-
-          {callReportView === 'calendar' && (
-            <Card className="border-border/70">
-              <CardHeader>
-                <CardTitle className="text-base">Calendar Trend View</CardTitle>
-                <CardDescription>Daily pattern of call volume, connect rate, and call direction.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="max-h-[460px] overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Total</TableHead>
-                        <TableHead>Connected</TableHead>
-                        <TableHead>Missed</TableHead>
-                        <TableHead>Incoming</TableHead>
-                        <TableHead>Outgoing</TableHead>
-                        <TableHead>Talk Time</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {callActivityReport.byCalendar.map((entry) => (
-                        <TableRow key={entry.date}>
-                          <TableCell className="font-medium">{format(new Date(entry.date), 'dd MMM yyyy')}</TableCell>
-                          <TableCell>{entry.totalCalls}</TableCell>
-                          <TableCell>{entry.connectedCalls}</TableCell>
-                          <TableCell>{entry.missedCalls}</TableCell>
-                          <TableCell>{entry.incomingCalls}</TableCell>
-                          <TableCell>{entry.outgoingCalls}</TableCell>
-                          <TableCell>{formatCallDuration(entry.durationSeconds)}</TableCell>
-                        </TableRow>
-                      ))}
-                      {callActivityReport.byCalendar.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center text-muted-foreground">No daily call trend data in selected range.</TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>
@@ -1299,6 +1597,57 @@ const AdminDashboard = () => {
               </Button>
             </div>
           </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="text-base">Integration Health</CardTitle>
+                <CardDescription>Current CRM connector status and token lifecycle.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <span>Connection</span>
+                  <Badge variant={zohoStatus?.connected ? 'default' : 'secondary'}>{zohoStatus?.connected ? 'Connected' : 'Disconnected'}</Badge>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <span>API Domain</span>
+                  <span className="truncate text-muted-foreground">{zohoConnector.apiDomain}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <span>Accounts Server</span>
+                  <span className="truncate text-muted-foreground">{zohoConnector.accountsServer}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <span>Token Expires</span>
+                  <span className="text-muted-foreground">{zohoStatus?.expiresAt ? format(new Date(zohoStatus.expiresAt), 'dd MMM yyyy, h:mm a') : 'Managed by server'}</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="text-base">Recent Sync Runs</CardTitle>
+                <CardDescription>Last 20 manual sync operations with outcomes.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-[260px] overflow-auto space-y-2">
+                  {syncLogs.map((log) => (
+                    <div key={log.id} className="rounded-lg border px-3 py-2 text-sm">
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="font-medium">{log.mode}</span>
+                        <Badge variant={log.status === 'error' ? 'destructive' : log.status === 'warning' ? 'secondary' : 'default'}>{log.status}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{format(new Date(log.time), 'dd MMM yyyy, h:mm:ss a')}</p>
+                      <p className="text-xs text-muted-foreground">Success: {log.success} | Failed: {log.failed}</p>
+                    </div>
+                  ))}
+                  {syncLogs.length === 0 && (
+                    <p className="rounded-lg border p-3 text-sm text-muted-foreground">No sync logs yet. Trigger a push action to populate run history.</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -1404,7 +1753,20 @@ const AdminDashboard = () => {
               </DialogContent>
             </Dialog>
           </CardHeader>
-          <CardContent className="pt-4">
+          <CardContent className="space-y-4 pt-4">
+            <div className="rounded-xl border p-4">
+              <p className="mb-2 text-sm font-semibold">Permissions Matrix</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                <div className="rounded-lg border px-3 py-2 text-sm">
+                  <p className="font-medium">Admin</p>
+                  <p className="text-muted-foreground">Full control: users, integrations, settings, analytics, and exports.</p>
+                </div>
+                <div className="rounded-lg border px-3 py-2 text-sm">
+                  <p className="font-medium">Sales</p>
+                  <p className="text-muted-foreground">Lead and activity operations only. No admin configuration access.</p>
+                </div>
+              </div>
+            </div>
             <div className="overflow-hidden rounded-xl border">
               <Table>
                 <TableHeader>
@@ -1418,7 +1780,7 @@ const AdminDashboard = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((entry) => (
+                  {paginatedUsers.map((entry) => (
                     <TableRow key={entry.id}>
                       <TableCell className="font-medium">{entry.full_name || 'No name'}</TableCell>
                       <TableCell className="text-muted-foreground">{entry.email}</TableCell>
@@ -1458,8 +1820,39 @@ const AdminDashboard = () => {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {paginatedUsers.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No users found.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Showing {(usersPage - 1) * usersPageSize + (paginatedUsers.length > 0 ? 1 : 0)}-
+                {(usersPage - 1) * usersPageSize + paginatedUsers.length} of {users.length}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={usersPage <= 1}
+                  onClick={() => setUsersPage((page) => Math.max(1, page - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={usersPage >= usersPageCount}
+                  onClick={() => setUsersPage((page) => Math.min(usersPageCount, page + 1))}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -1540,57 +1933,84 @@ const AdminDashboard = () => {
               <p className="truncate text-sm text-muted-foreground">Enterprise workspace for overview, lead ops, call intelligence, CRM sync, and governance</p>
             </div>
           </div>
-          <Button variant="outline" onClick={handleSignOut} className="bg-card">
-            <LogOut className="mr-2 h-4 w-4" />
-            Sign Out
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" className="hidden md:inline-flex" onClick={() => setCommandOpen(true)}>
+              <Search className="mr-2 h-4 w-4" />
+              Search
+              <CommandShortcut>⌘K</CommandShortcut>
+            </Button>
+            <Button variant="outline" size="icon" aria-label="Notifications">
+              <Bell className="h-4 w-4" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">{user.email?.split('@')[0] || 'Admin'}</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel>Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setActiveSection('settings')}>Settings</DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSignOut}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-[1480px] grid-cols-1 gap-4 px-5 py-4 lg:h-[calc(100vh-96px)] lg:grid-cols-[270px_minmax(0,1fr)]">
+      <div className={`mx-auto grid w-full max-w-[1480px] grid-cols-1 gap-4 px-5 py-4 lg:h-[calc(100vh-96px)] ${sidebarCollapsed ? 'lg:grid-cols-[84px_minmax(0,1fr)]' : 'lg:grid-cols-[270px_minmax(0,1fr)]'}`}>
         <aside className="h-fit rounded-2xl border bg-card p-3 shadow-sm lg:sticky lg:top-20">
+          <div className="mb-2 flex justify-end">
+            <Button variant="ghost" size="icon" onClick={() => setSidebarCollapsed((value) => !value)}>
+              {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </Button>
+          </div>
           <div className="mb-3 rounded-xl border bg-muted/20 px-3 py-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Workspace</p>
-            <p className="text-sm font-medium text-foreground">Enterprise Admin</p>
+            {!sidebarCollapsed && <p className="text-sm font-medium text-foreground">Enterprise Admin</p>}
           </div>
-          <div className="mb-3 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Navigation
-          </div>
+          {!sidebarCollapsed && (
+            <div className="mb-3 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Navigation
+            </div>
+          )}
           <nav className="space-y-1">
             <button
               onClick={() => setActiveSection('overview')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'overview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'overview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'} ${sidebarCollapsed ? 'justify-center' : ''}`}
             >
               <LayoutDashboard className="h-4 w-4" />
-              Overview
+              {!sidebarCollapsed && 'Overview'}
             </button>
             <button
               onClick={() => setActiveSection('leads')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'leads' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'leads' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'} ${sidebarCollapsed ? 'justify-center' : ''}`}
             >
               <Users className="h-4 w-4" />
-              Manage Leads
+              {!sidebarCollapsed && 'Manage Leads'}
             </button>
             <button
               onClick={() => setActiveSection('call-activity')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'call-activity' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'call-activity' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'} ${sidebarCollapsed ? 'justify-center' : ''}`}
             >
               <Phone className="h-4 w-4" />
-              Call Activity
+              {!sidebarCollapsed && 'Call Activity'}
             </button>
             <button
               onClick={() => setActiveSection('marketplace')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'marketplace' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'marketplace' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'} ${sidebarCollapsed ? 'justify-center' : ''}`}
             >
               <Link2 className="h-4 w-4" />
-              Connect CRM
+              {!sidebarCollapsed && 'Connect CRM'}
             </button>
             <button
               onClick={() => setActiveSection('settings')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'settings' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'settings' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'} ${sidebarCollapsed ? 'justify-center' : ''}`}
             >
               <Settings className="h-4 w-4" />
-              Settings
+              {!sidebarCollapsed && 'Settings'}
             </button>
           </nav>
         </aside>
@@ -1645,6 +2065,51 @@ const AdminDashboard = () => {
           {activeSection === 'settings' && renderSettings()}
         </main>
       </div>
+
+      <CommandDialog open={commandOpen} onOpenChange={setCommandOpen}>
+        <CommandInput placeholder="Search sections, users, and actions..." />
+        <CommandList>
+          <CommandEmpty>No quick actions found.</CommandEmpty>
+          <CommandGroup heading="Navigation">
+            <CommandItem onSelect={() => { setActiveSection('overview'); setCommandOpen(false); }}>
+              <LayoutDashboard className="mr-2 h-4 w-4" />
+              Overview
+            </CommandItem>
+            <CommandItem onSelect={() => { setActiveSection('leads'); setCommandOpen(false); }}>
+              <Users className="mr-2 h-4 w-4" />
+              Lead Operations
+            </CommandItem>
+            <CommandItem onSelect={() => { setActiveSection('call-activity'); setCommandOpen(false); }}>
+              <Phone className="mr-2 h-4 w-4" />
+              Call Activity
+            </CommandItem>
+            <CommandItem onSelect={() => { setActiveSection('marketplace'); setCommandOpen(false); }}>
+              <Link2 className="mr-2 h-4 w-4" />
+              Integrations
+            </CommandItem>
+            <CommandItem onSelect={() => { setActiveSection('settings'); setCommandOpen(false); }}>
+              <Settings className="mr-2 h-4 w-4" />
+              Settings
+            </CommandItem>
+          </CommandGroup>
+          <CommandSeparator />
+          <CommandGroup heading="Actions">
+            <CommandItem onSelect={() => {
+              setGlobalDateFrom(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
+              setGlobalDateTo(format(new Date(), 'yyyy-MM-dd'));
+              setGlobalOwnerId('all');
+              setCommandOpen(false);
+            }}>
+              <Filter className="mr-2 h-4 w-4" />
+              Reset Global Filters
+            </CommandItem>
+            <CommandItem onSelect={() => { setIsCreateDialogOpen(true); setActiveSection('settings'); setSettingsTab('users'); setCommandOpen(false); }}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create User
+            </CommandItem>
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-md">
