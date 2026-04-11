@@ -1,4 +1,4 @@
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 export interface CallLogEntry {
   id: string;
@@ -43,13 +43,20 @@ export interface MicrophonePermissionPlugin {
   openAppSettings(): Promise<{ opened: boolean }>;
 }
 
+export interface NativeSpeechRecognitionPlugin {
+  startListening(options?: { prompt?: string; language?: string }): Promise<{
+    transcript: string;
+    matches: string[];
+  }>;
+}
+
 // Register native plugins
 export const CallLogPlugin = registerPlugin<CallLogPlugin>('CallLogPlugin');
 export const CallRecordingPlugin = registerPlugin<CallRecordingPlugin>('CallRecordingPlugin');
 export const MicrophonePermissionPlugin = registerPlugin<MicrophonePermissionPlugin>('MicrophonePermissionPlugin');
+export const NativeSpeechRecognitionPlugin = registerPlugin<NativeSpeechRecognitionPlugin>('NativeSpeechRecognitionPlugin');
 
 // Helper to check if running in native app
 export const isNativeApp = (): boolean => {
-  return typeof (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor !== 'undefined' && 
-         (window as unknown as { Capacitor: { isNativePlatform: () => boolean } }).Capacitor.isNativePlatform();
+  return Capacitor.isNativePlatform();
 };

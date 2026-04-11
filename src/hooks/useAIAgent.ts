@@ -239,6 +239,96 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
     [user, queryClient, onCall, onWhatsApp, onImportRecordings],
   );
 
+  const getValidAccessToken = useCallback(async () => {
+    const {
+      data: { session: currentSession },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.error('❌ Session lookup failed:', sessionError.message);
+      throw new Error('Authentication failed. Unable to read current session.');
+    }
+
+    if (!currentSession) {
+      throw new Error('Authentication failed. No active session found.');
+    }
+
+    const { data: currentUser, error: userError } = await supabase.auth.getUser();
+    if (!userError && currentUser.user) {
+      return currentSession.access_token;
+    }
+
+    console.warn('⚠️ Session token may be stale, attempting refresh...', userError?.message);
+    const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError || !refreshedData.session?.access_token) {
+      console.error('❌ Session refresh failed:', refreshError?.message || 'No refreshed session');
+      throw new Error('Authentication failed. Sign out and log back in before retrying ARIA.');
+    }
+
+    const { data: refreshedUser, error: refreshedUserError } = await supabase.auth.getUser();
+    if (refreshedUserError || !refreshedUser.user) {
+      console.error('❌ Refreshed session user lookup failed:', refreshedUserError?.message || 'No user');
+      throw new Error('Authentication failed. Sign out and log back in before retrying ARIA.');
+    }
+
+    console.log('✅ Session refreshed successfully for user:', refreshedUser.user.id);
+    return refreshedData.session.access_token;
+  }, []);
+
+  const invokeAgent = useCallback(
+    async (message: string, conversationHistory: { role: string; content: string }[], accessToken: string) => {
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-agent`;
+      const makeRequest = (token: string) =>
+        fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            message,
+            conversationHistory: conversationHistory.slice(-8),
+          }),
+        });
+
+      let response = await makeRequest(accessToken);
+
+      if (response.status === 401) {
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError || !refreshed.session?.access_token) {
+          throw new Error('Authentication failed. Sign out and log back in before retrying ARIA.');
+        }
+        response = await makeRequest(refreshed.session.access_token);
+      }
+
+      const responseText = await response.text();
+      let parsed: unknown = null;
+
+      try {
+        parsed = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        parsed = null;
+      }
+
+      if (!response.ok) {
+        const details =
+          (parsed && typeof parsed === 'object' && 'message' in parsed && typeof parsed.message === 'string'
+            ? parsed.message
+            : responseText) || response.statusText;
+        throw new Error(`AI agent request failed (${response.status}): ${details.slice(0, 200)}`);
+      }
+
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('AI agent returned an invalid response.');
+      }
+
+      return parsed as { message?: string; action?: unknown; suggestions?: unknown };
+    },
+    [],
+  );
+
   const sendMessage = useCallback(
     async (text: string) => {
       if (!text.trim() || isLoading) return;
@@ -268,29 +358,11 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
       historyRef.current = [...historyRef.current, { role: 'user', content: text.trim() }];
 
       try {
-        // Get current session to ensure auth token is fresh
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError || !session) {
-          console.error('❌ Session error:', sessionError?.message || 'No session');
-          throw new Error('Not authenticated. Please log in again.');
-        }
-        console.log('✅ Session valid for user:', session.user.id);
+        const accessToken = await getValidAccessToken();
+        console.log('✅ ARIA access token ready');
 
         console.log('🔄 Invoking ai-agent function...');
-        const { data, error } = await supabase.functions.invoke('ai-agent', {
-          body: {
-            message: text.trim(),
-            conversationHistory: historySnapshot.slice(-8),
-          },
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
-
-        if (error) {
-          console.error('❌ Function invocation error:', error.message);
-          throw new Error(`Function error: ${error.message}`);
-        }
+        const data = await invokeAgent(text.trim(), historySnapshot, accessToken);
 
         if (!data) {
           console.error('❌ Empty response from function');
@@ -345,7 +417,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         setIsLoading(false);
       }
     },
-    [isLoading, executeAction],
+    [isLoading, executeAction, getValidAccessToken, invokeAgent],
   );
 
   const clearConversation = useCallback(() => {

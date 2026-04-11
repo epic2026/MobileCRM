@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(CallLogPlugin.class);
         registerPlugin(CallRecordingPlugin.class);
         registerPlugin(MicrophonePermissionPlugin.class);
+        registerPlugin(NativeSpeechRecognitionPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

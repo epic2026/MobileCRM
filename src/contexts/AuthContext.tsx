@@ -43,34 +43,56 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const clearAuthState = () => {
+    setSession(null);
+    setUser(null);
+    setRole(null);
+  };
+
+  const applyValidatedSession = async (incomingSession: Session | null) => {
+    if (!incomingSession) {
+      clearAuthState();
+      return;
+    }
+
+    const { data: currentUserData, error: currentUserError } = await supabase.auth.getUser();
+    if (!currentUserError && currentUserData.user) {
+      setSession(incomingSession);
+      setUser(currentUserData.user);
+      setRole(await fetchUserRole(currentUserData.user.id));
+      return;
+    }
+
+    console.warn('⚠️ Cached session invalid, attempting refresh...', currentUserError?.message);
+    const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError || !refreshedData.session || !refreshedData.user) {
+      console.error('❌ Session refresh failed during app bootstrap:', refreshError?.message || 'No refreshed user');
+      await supabase.auth.signOut();
+      clearAuthState();
+      return;
+    }
+
+    setSession(refreshedData.session);
+    setUser(refreshedData.user);
+    setRole(await fetchUserRole(refreshedData.user.id));
+  };
+
   useEffect(() => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
-        setTimeout(() => {
-          fetchUserRole(session.user.id).then(setRole);
-        }, 0);
-      } else {
-        setRole(null);
-      }
+      setTimeout(() => {
+        void applyValidatedSession(session);
+      }, 0);
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
-        fetchUserRole(session.user.id).then((resolvedRole) => {
-          setRole(resolvedRole);
-          setIsLoading(false);
-        });
-        return;
-      }
-
+      applyValidatedSession(session).finally(() => {
+        setIsLoading(false);
+      });
+    }).catch((error) => {
+      console.error('❌ Failed to bootstrap auth session:', error);
+      clearAuthState();
       setIsLoading(false);
     });
 
@@ -105,9 +127,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    setRole(null);
+    clearAuthState();
   };
 
   return (
