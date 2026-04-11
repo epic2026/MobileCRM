@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders, getAuthedUser, getUserRole, withCors } from "../_shared/task-module.ts";
+import { ensureZohoAccessToken } from "../_shared/zoho.ts";
 
 type LeadRef = {
   id?: string;
@@ -26,8 +22,6 @@ type ConnectorRecord = {
 
 type RequestBody = {
   mode?: "tasks" | "activities";
-  apiDomain?: string;
-  accessToken?: string;
   records?: ConnectorRecord[];
 };
 
@@ -57,62 +51,19 @@ serve(async (req) => {
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const { data: roleRow } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (!roleRow || roleRow.role !== "admin") {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const user = await getAuthedUser(authHeader);
+    const role = await getUserRole(authHeader || "", user.id);
+    if (role !== "admin") {
+      return withCors({ error: "Forbidden" }, 403);
     }
 
     const body = (await req.json()) as RequestBody;
     const mode = body.mode;
     const records = Array.isArray(body.records) ? body.records : [];
-    const accessToken = (body.accessToken || "").trim();
-    const apiDomain = (body.apiDomain || "https://www.zohoapis.com").replace(/\/$/, "");
+    const { accessToken, apiDomain } = await ensureZohoAccessToken();
 
     if (!mode || (mode !== "tasks" && mode !== "activities")) {
-      return new Response(JSON.stringify({ error: "Invalid mode" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (!accessToken) {
-      return new Response(JSON.stringify({ error: "Missing Zoho OAuth access token" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return withCors({ error: "Invalid mode" }, 400);
     }
 
     const zohoFetch = (path: string, init?: RequestInit) =>
@@ -253,17 +204,8 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ success, failed, details }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return withCors({ success, failed, details }, 200);
   } catch (error) {
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unexpected connector failure" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+    return withCors({ error: error instanceof Error ? error.message : "Unexpected connector failure" }, 500);
   }
 });

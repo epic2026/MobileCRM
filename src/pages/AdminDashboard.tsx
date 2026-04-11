@@ -103,18 +103,39 @@ type ReportBuilderState = {
 interface ReportPreview {
   title: string;
   description: string;
-  summaryCards: Array<{ label: string; value: string; hint: string }>;
-  actionItems: string[];
-  insights: string[];
+  callTypeBreakdown: Array<{ label: string; count: number; durationSeconds: number; colorClass: string }>;
+  kpis: Array<{ label: string; value: string }>;
+  donutSlices: Array<{ label: string; percent: number; color: string }>;
+  registerSummaryRows: Array<{
+    contact: string;
+    phone: string;
+    totalCalls: number;
+    totalDurationSeconds: number;
+    incomingCalls: number;
+    incomingDurationSeconds: number;
+    outgoingCalls: number;
+    outgoingDurationSeconds: number;
+    missedCalls: number;
+    rejectedCalls: number;
+    neverAttended: number;
+    neverReceived: number;
+  }>;
   columns: string[];
   rows: ReportRow[];
   filename: string;
 }
 
 type ZohoConnectorState = {
-  enabled: boolean;
   apiDomain: string;
-  accessToken: string;
+  accountsServer: string;
+};
+
+type ZohoConnectionStatus = {
+  connected: boolean;
+  apiDomain: string;
+  accountsServer: string;
+  scope: string | null;
+  expiresAt: string | null;
 };
 
 const AdminDashboard = () => {
@@ -154,9 +175,8 @@ const AdminDashboard = () => {
     customEndDate: format(new Date(), 'yyyy-MM-dd'),
   });
   const [zohoConnector, setZohoConnector] = useState<ZohoConnectorState>({
-    enabled: false,
     apiDomain: 'https://www.zohoapis.com',
-    accessToken: '',
+    accountsServer: 'https://accounts.zoho.com',
   });
   const [zohoSyncState, setZohoSyncState] = useState<{ tasks: boolean; activities: boolean }>({
     tasks: false,
@@ -174,7 +194,7 @@ const AdminDashboard = () => {
     if (!saved) return;
     try {
       const parsed = JSON.parse(saved) as ZohoConnectorState;
-      if (parsed?.apiDomain) {
+      if (parsed?.apiDomain && parsed?.accountsServer) {
         setZohoConnector(parsed);
       }
     } catch {
@@ -211,6 +231,39 @@ const AdminDashboard = () => {
     },
     enabled: role === 'admin',
   });
+
+  const {
+    data: zohoStatus,
+    isLoading: zohoStatusLoading,
+    refetch: refetchZohoStatus,
+  } = useQuery({
+    queryKey: ['zoho-oauth-status'],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke('zoho_oauth', {
+        body: { action: 'status' },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to fetch Zoho connection status');
+      }
+
+      if (data?.error) {
+        throw new Error(typeof data.error === 'string' ? data.error : 'Failed to fetch Zoho connection status');
+      }
+
+      return data as ZohoConnectionStatus;
+    },
+    enabled: role === 'admin',
+  });
+
+  useEffect(() => {
+    if (!zohoStatus) return;
+    setZohoConnector((prev) => ({
+      ...prev,
+      apiDomain: zohoStatus.apiDomain || prev.apiDomain,
+      accountsServer: zohoStatus.accountsServer || prev.accountsServer,
+    }));
+  }, [zohoStatus]);
 
   const { data: leads = [] } = useQuery({
     queryKey: ['admin-leads'],
@@ -329,13 +382,32 @@ const AdminDashboard = () => {
       .filter((call) => isWithinRange(call.created_at) && ownerMatches(call.user_id))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
+    const formatDuration = (seconds: number) => {
+      const safeSeconds = Math.max(0, Math.round(seconds));
+      const hours = Math.floor(safeSeconds / 3600);
+      const minutes = Math.floor((safeSeconds % 3600) / 60);
+      const secs = safeSeconds % 60;
+      return `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(secs).padStart(2, '0')}s`;
+    };
+
+    const hasOutcome = (call: CallLog, keywords: string[]) => {
+      const normalized = (call.outcome || '').toLowerCase();
+      return keywords.some((keyword) => normalized.includes(keyword));
+    };
+
+    const totalDurationSeconds = filteredCalls.reduce((sum, call) => sum + (call.duration ?? 0), 0);
     const connectedCalls = filteredCalls.filter((call) => (call.duration ?? 0) > 0);
+    const incomingCalls = filteredCalls.filter((call) => call.type === 'incoming');
+    const outgoingCalls = filteredCalls.filter((call) => call.type === 'outgoing');
     const missedCalls = filteredCalls.filter((call) => call.type === 'missed');
+    const rejectedCalls = filteredCalls.filter((call) => hasOutcome(call, ['reject']));
+    const neverAttendedCalls = filteredCalls.filter((call) => hasOutcome(call, ['never attended', 'unattended']));
+    const neverReceivedCalls = filteredCalls.filter((call) => hasOutcome(call, ['never received']));
+    const notPickedCalls = filteredCalls.filter((call) =>
+      hasOutcome(call, ['not pick', 'not picked', 'no answer', 'unanswered'])
+      || (call.type === 'outgoing' && (call.duration ?? 0) === 0)
+    );
     const shortCalls = connectedCalls.filter((call) => (call.duration ?? 0) < 30);
-    const averageCallDurationSeconds = connectedCalls.length
-      ? Math.round(connectedCalls.reduce((sum, call) => sum + (call.duration ?? 0), 0) / connectedCalls.length)
-      : 0;
-    const connectionRate = filteredCalls.length ? Math.round((connectedCalls.length / filteredCalls.length) * 100) : 0;
 
     const taskLeadIds = new Set(
       leadTasks
@@ -346,37 +418,129 @@ const AdminDashboard = () => {
     const followUpRisk = filteredCalls.length ? Math.round((callsWithoutTasks.length / filteredCalls.length) * 100) : 0;
 
     const scopeLabel = selectedOwner?.full_name || selectedOwner?.email || 'All users';
+    const registerMap = new Map<string, {
+      contact: string;
+      phone: string;
+      totalCalls: number;
+      totalDurationSeconds: number;
+      incomingCalls: number;
+      incomingDurationSeconds: number;
+      outgoingCalls: number;
+      outgoingDurationSeconds: number;
+      missedCalls: number;
+      rejectedCalls: number;
+      neverAttended: number;
+      neverReceived: number;
+    }>();
+
+    filteredCalls.forEach((call) => {
+      const phone = call.phone || 'Unknown';
+      const existing = registerMap.get(phone) || {
+        contact: call.contact_name || 'Unknown',
+        phone,
+        totalCalls: 0,
+        totalDurationSeconds: 0,
+        incomingCalls: 0,
+        incomingDurationSeconds: 0,
+        outgoingCalls: 0,
+        outgoingDurationSeconds: 0,
+        missedCalls: 0,
+        rejectedCalls: 0,
+        neverAttended: 0,
+        neverReceived: 0,
+      };
+
+      existing.totalCalls += 1;
+      existing.totalDurationSeconds += call.duration ?? 0;
+
+      if (call.type === 'incoming') {
+        existing.incomingCalls += 1;
+        existing.incomingDurationSeconds += call.duration ?? 0;
+      }
+
+      if (call.type === 'outgoing') {
+        existing.outgoingCalls += 1;
+        existing.outgoingDurationSeconds += call.duration ?? 0;
+      }
+
+      if (call.type === 'missed') {
+        existing.missedCalls += 1;
+      }
+
+      if (hasOutcome(call, ['reject'])) {
+        existing.rejectedCalls += 1;
+      }
+
+      if (hasOutcome(call, ['never attended', 'unattended'])) {
+        existing.neverAttended += 1;
+      }
+
+      if (hasOutcome(call, ['never received'])) {
+        existing.neverReceived += 1;
+      }
+
+      if (!existing.contact || existing.contact === 'Unknown') {
+        existing.contact = call.contact_name || existing.contact;
+      }
+
+      registerMap.set(phone, existing);
+    });
+
+    const registerSummaryRows = Array.from(registerMap.values())
+      .sort((a, b) => b.totalCalls - a.totalCalls)
+      .slice(0, 50);
+
+    const uniqueClients = new Set(filteredCalls.map((call) => call.phone).filter(Boolean)).size;
+    const incomingDurationSeconds = incomingCalls.reduce((sum, call) => sum + (call.duration ?? 0), 0);
+    const outgoingDurationSeconds = outgoingCalls.reduce((sum, call) => sum + (call.duration ?? 0), 0);
+
+    const totalForDonut = incomingCalls.length + outgoingCalls.length + missedCalls.length + rejectedCalls.length;
+    const donutPercent = (value: number) => (totalForDonut ? Number(((value / totalForDonut) * 100).toFixed(1)) : 0);
+
     return {
-      title: 'Detailed Call Activity Report',
+      title: 'Detailed Call Activity Report - Summary',
       description: `${scopeLabel} · ${reportDateWindow.label}`,
-      summaryCards: [
-        { label: 'Total Calls', value: String(filteredCalls.length), hint: `Owner scope: ${scopeLabel}` },
-        { label: 'Connected Rate', value: `${connectionRate}%`, hint: `${connectedCalls.length} connected calls` },
-        { label: 'Avg Talk Time', value: `${averageCallDurationSeconds}s`, hint: `${shortCalls.length} calls under 30s` },
-        { label: 'Follow-up Risk', value: `${followUpRisk}%`, hint: `${callsWithoutTasks.length} calls without linked tasks` },
+      callTypeBreakdown: [
+        {
+          label: 'Incoming',
+          count: incomingCalls.length,
+          durationSeconds: incomingDurationSeconds,
+          colorClass: 'text-emerald-600',
+        },
+        {
+          label: 'Outgoing',
+          count: outgoingCalls.length,
+          durationSeconds: outgoingDurationSeconds,
+          colorClass: 'text-amber-600',
+        },
+        {
+          label: 'Missed',
+          count: missedCalls.length,
+          durationSeconds: 0,
+          colorClass: 'text-rose-600',
+        },
+        {
+          label: 'Rejected',
+          count: rejectedCalls.length,
+          durationSeconds: 0,
+          colorClass: 'text-red-700',
+        },
       ],
-      actionItems: [
-        shortCalls.length
-          ? `Review ${shortCalls.length} short calls under 30 seconds to identify dropped/poor quality conversations.`
-          : 'Short-call rate is healthy this period.',
-        callsWithoutTasks.length
-          ? `Create follow-up tasks for ${callsWithoutTasks.length} calls that currently have no tracked next step.`
-          : 'All tracked calls have related follow-up tasks.',
-        missedCalls.length
-          ? `Prioritize callback campaigns for ${missedCalls.length} missed calls in this date window.`
-          : 'No missed calls found in this window.',
+      kpis: [
+        { label: 'Never Attended', value: String(neverAttendedCalls.length) },
+        { label: 'Not Pickup by client', value: String(notPickedCalls.length) },
+        { label: 'Connected calls', value: String(connectedCalls.length) },
+        { label: 'Unique clients', value: String(uniqueClients) },
+        { label: 'Working Hours', value: formatDuration(totalDurationSeconds) },
+        { label: 'Follow-up risk', value: `${followUpRisk}%` },
       ],
-      insights: [
-        filteredCalls.length
-          ? `${filteredCalls.length} calls were logged with ${connectionRate}% successful connections.`
-          : 'No call activity captured in this period.',
-        averageCallDurationSeconds > 0
-          ? `Average connected call duration is ${averageCallDurationSeconds} seconds.`
-          : 'Connected call duration data is unavailable for this period.',
-        missedCalls.length
-          ? `${missedCalls.length} calls are marked missed and should be auto-prioritized for retry.`
-          : 'Missed call volume is currently low.',
+      donutSlices: [
+        { label: 'Incoming', percent: donutPercent(incomingCalls.length), color: '#16a34a' },
+        { label: 'Outgoing', percent: donutPercent(outgoingCalls.length), color: '#f59e0b' },
+        { label: 'Missed', percent: donutPercent(missedCalls.length), color: '#ef4444' },
+        { label: 'Rejected', percent: donutPercent(rejectedCalls.length), color: '#991b1b' },
       ],
+      registerSummaryRows,
       columns: ['Call Time', 'Owner', 'Lead', 'Contact', 'Direction', 'Duration (s)', 'Outcome', 'Next Action'],
       rows: filteredCalls.slice(0, 200).map((call) => {
         const lead = leadMap.get(call.lead_id || '');
@@ -565,8 +729,8 @@ const AdminDashboard = () => {
 
   const zohoSyncMutation = useMutation({
     mutationFn: async ({ mode }: { mode: 'tasks' | 'activities' }) => {
-      if (!zohoConnector.enabled || !zohoConnector.accessToken.trim()) {
-        throw new Error('Connect Zoho CRM first with a valid access token.');
+      if (!zohoStatus?.connected) {
+        throw new Error('Connect Zoho CRM first.');
       }
 
       const tasksPayload = leadTasks.slice(0, 100).map((task) => {
@@ -610,8 +774,6 @@ const AdminDashboard = () => {
       const { data, error } = await supabase.functions.invoke('zoho_connector', {
         body: {
           mode,
-          apiDomain: zohoConnector.apiDomain,
-          accessToken: zohoConnector.accessToken,
           records: mode === 'tasks' ? tasksPayload : activitiesPayload,
         },
       });
@@ -641,6 +803,100 @@ const AdminDashboard = () => {
     },
   });
 
+  const zohoAuthorizeMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('zoho_oauth', {
+        body: {
+          action: 'authorize_url',
+          apiDomain: zohoConnector.apiDomain,
+          accountsServer: zohoConnector.accountsServer,
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to start Zoho OAuth');
+      }
+
+      if (data?.error) {
+        throw new Error(typeof data.error === 'string' ? data.error : 'Failed to start Zoho OAuth');
+      }
+
+      return data as { authUrl: string };
+    },
+  });
+
+  const zohoDisconnectMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('zoho_oauth', {
+        body: { action: 'disconnect' },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to disconnect Zoho');
+      }
+
+      if (data?.error) {
+        throw new Error(typeof data.error === 'string' ? data.error : 'Failed to disconnect Zoho');
+      }
+    },
+    onSuccess: async () => {
+      await refetchZohoStatus();
+      toast({ title: 'Zoho disconnected', description: 'Server-side OAuth credentials were removed.' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Disconnect failed', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const handleConnectZoho = async () => {
+    try {
+      const { authUrl } = await zohoAuthorizeMutation.mutateAsync();
+      const popup = window.open(authUrl, 'zoho-oauth', 'width=560,height=760');
+
+      if (!popup) {
+        toast({
+          title: 'Popup blocked',
+          description: 'Allow popups for this site and retry Zoho connect.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      let closedCheck = 0;
+      let pollTimer: number | null = null;
+
+      const cleanup = () => {
+        window.removeEventListener('message', onMessage);
+        if (pollTimer) {
+          window.clearInterval(pollTimer);
+        }
+      };
+
+      const onMessage = async (event: MessageEvent) => {
+        if (!event?.data || event.data.type !== 'ZOHO_OAUTH_RESULT') return;
+        cleanup();
+        if (event.data.ok) {
+          await refetchZohoStatus();
+          toast({ title: 'Zoho connected', description: 'OAuth credentials are now stored securely on server.' });
+        } else {
+          toast({ title: 'Zoho connect failed', description: event.data.message || 'OAuth callback failed', variant: 'destructive' });
+        }
+      };
+
+      window.addEventListener('message', onMessage);
+
+      pollTimer = window.setInterval(async () => {
+        if (!popup.closed) return;
+        closedCheck += 1;
+        if (closedCheck < 1) return;
+        cleanup();
+        await refetchZohoStatus();
+      }, 1000);
+    } catch (error) {
+      toast({ title: 'Zoho connect failed', description: error instanceof Error ? error.message : 'Failed to start OAuth', variant: 'destructive' });
+    }
+  };
+
   const renderDashboard = () => (
     <div className="space-y-6">
       <Card>
@@ -649,7 +905,7 @@ const AdminDashboard = () => {
             <BarChart3 className="h-5 w-5" />
             Detailed Call Activity Report
           </CardTitle>
-          <CardDescription>Action-oriented calling report for conversion follow-ups, callback planning, and rep coaching.</CardDescription>
+          <CardDescription>Summary, call quality indicators, and register mobile number breakdown for operations and coaching.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className={`grid gap-4 md:grid-cols-2 ${reportBuilder.dateRange === 'custom' ? 'xl:grid-cols-5' : 'xl:grid-cols-3'}`}>
@@ -750,6 +1006,14 @@ const AdminDashboard = () => {
           )}
 
           <div className="space-y-5 rounded-2xl border bg-muted/20 p-4">
+            <div className="inline-flex rounded-lg border bg-background p-1">
+              <div className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground">Summary</div>
+              <div className="px-3 py-1.5 text-sm text-muted-foreground">Analysis</div>
+              <div className="px-3 py-1.5 text-sm text-muted-foreground">Never Attended</div>
+              <div className="px-3 py-1.5 text-sm text-muted-foreground">Never Received</div>
+              <div className="px-3 py-1.5 text-sm text-muted-foreground">Call History</div>
+            </div>
+
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-foreground">{reportPreview.title}</h3>
@@ -758,66 +1022,134 @@ const AdminDashboard = () => {
               <Badge variant="secondary">Actionable</Badge>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {reportPreview.summaryCards.map((card) => (
-                <div key={card.label} className="rounded-xl border bg-background p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{card.label}</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{card.value}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{card.hint}</p>
+            <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+              <div className="overflow-hidden rounded-xl border bg-background">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Call Type</TableHead>
+                      <TableHead>Call</TableHead>
+                      <TableHead>Duration</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportPreview.callTypeBreakdown.map((item) => (
+                      <TableRow key={item.label}>
+                        <TableCell className={`font-medium ${item.colorClass}`}>{item.label}</TableCell>
+                        <TableCell>{item.count}</TableCell>
+                        <TableCell>{item.durationSeconds > 0 ? `${Math.floor(item.durationSeconds / 3600)}h ${Math.floor((item.durationSeconds % 3600) / 60)}m ${item.durationSeconds % 60}s` : '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-muted/30">
+                      <TableCell className="font-semibold">Total</TableCell>
+                      <TableCell className="font-semibold">{reportPreview.rows.length}</TableCell>
+                      <TableCell className="font-semibold">
+                        {`${Math.floor(reportPreview.callTypeBreakdown.reduce((sum, item) => sum + item.durationSeconds, 0) / 3600)}h ${Math.floor((reportPreview.callTypeBreakdown.reduce((sum, item) => sum + item.durationSeconds, 0) % 3600) / 60)}m ${reportPreview.callTypeBreakdown.reduce((sum, item) => sum + item.durationSeconds, 0) % 60}s`}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+                <div className="rounded-xl border bg-background p-4">
+                  <div className="space-y-2">
+                    {reportPreview.kpis.map((kpi) => (
+                      <div key={kpi.label} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="text-muted-foreground">{kpi.label}</span>
+                        <span className="font-semibold text-foreground">{kpi.value}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
 
-            <div className="grid gap-4 xl:grid-cols-2">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Action Items</CardTitle>
-                  <CardDescription>Operational next steps based on call behavior.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {reportPreview.actionItems.map((item) => (
-                    <div key={item} className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-foreground">
-                      {item}
+                <div className="rounded-xl border bg-background p-4">
+                  <p className="text-sm font-medium text-foreground">Calls</p>
+                  <div className="mt-3 flex items-center gap-4">
+                    <div
+                      className="h-40 w-40 rounded-full"
+                      style={{
+                        background: `conic-gradient(${reportPreview.donutSlices
+                          .map((slice, index, array) => {
+                            const previous = array
+                              .slice(0, index)
+                              .reduce((sum, current) => sum + current.percent, 0);
+                            const current = previous + slice.percent;
+                            return `${slice.color} ${previous}% ${current}%`;
+                          })
+                          .join(', ')})`,
+                      }}
+                    >
+                      <div className="m-7 flex h-26 w-26 items-center justify-center rounded-full bg-background text-xs font-semibold text-foreground">
+                        Calls
+                      </div>
                     </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Report Scope</CardTitle>
-                  <CardDescription>Filters currently applied on this call report.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm text-muted-foreground">
-                  <div className="flex items-center justify-between gap-3">
-                    <span>Date window</span>
-                    <span className="font-medium text-foreground">{reportDateWindow.label}</span>
+                    <div className="space-y-1 text-xs">
+                      {reportPreview.donutSlices.map((slice) => (
+                        <div key={slice.label} className="flex items-center gap-2">
+                          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
+                          <span className="text-muted-foreground">{slice.label}</span>
+                          <span className="font-medium text-foreground">{slice.percent}%</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span>Owner</span>
-                    <span className="font-medium text-foreground">{selectedOwner?.full_name || selectedOwner?.email || 'All users'}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span>Rows available</span>
-                    <span className="font-medium text-foreground">{reportPreview.rows.length}</span>
-                  </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </div>
 
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Insights</CardTitle>
-                <CardDescription>Quick performance readout for the selected period.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {reportPreview.insights.map((insight) => (
-                  <div key={insight} className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-foreground">
-                    {insight}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+            <div className="overflow-hidden rounded-xl border bg-background">
+              <div className="border-b px-4 py-3">
+                <p className="text-sm font-medium text-foreground">Register mobile number summary</p>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Sr No.</TableHead>
+                    <TableHead>Registered Mobile</TableHead>
+                    <TableHead>Total Calls</TableHead>
+                    <TableHead>Total Duration</TableHead>
+                    <TableHead>Incoming Calls</TableHead>
+                    <TableHead>Incoming Duration</TableHead>
+                    <TableHead>Outgoing Calls</TableHead>
+                    <TableHead>Outgoing Duration</TableHead>
+                    <TableHead>Missed Calls</TableHead>
+                    <TableHead>Rejected Calls</TableHead>
+                    <TableHead>Never Attended</TableHead>
+                    <TableHead>Never Received</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reportPreview.registerSummaryRows.length > 0 ? (
+                    reportPreview.registerSummaryRows.map((row, index) => (
+                      <TableRow key={`${row.phone}-${index}`}>
+                        <TableCell>{index + 1}</TableCell>
+                        <TableCell>
+                          <div className="font-medium text-foreground">{row.contact}</div>
+                          <div className="text-xs text-muted-foreground">{row.phone}</div>
+                        </TableCell>
+                        <TableCell>{row.totalCalls}</TableCell>
+                        <TableCell>{`${Math.floor(row.totalDurationSeconds / 3600)}h ${Math.floor((row.totalDurationSeconds % 3600) / 60)}m ${row.totalDurationSeconds % 60}s`}</TableCell>
+                        <TableCell className="text-emerald-600">{row.incomingCalls}</TableCell>
+                        <TableCell className="text-emerald-600">{`${Math.floor(row.incomingDurationSeconds / 3600)}h ${Math.floor((row.incomingDurationSeconds % 3600) / 60)}m ${row.incomingDurationSeconds % 60}s`}</TableCell>
+                        <TableCell className="text-amber-600">{row.outgoingCalls}</TableCell>
+                        <TableCell className="text-amber-600">{`${Math.floor(row.outgoingDurationSeconds / 3600)}h ${Math.floor((row.outgoingDurationSeconds % 3600) / 60)}m ${row.outgoingDurationSeconds % 60}s`}</TableCell>
+                        <TableCell className="text-rose-600">{row.missedCalls}</TableCell>
+                        <TableCell className="text-red-700">{row.rejectedCalls}</TableCell>
+                        <TableCell>{row.neverAttended}</TableCell>
+                        <TableCell>{row.neverReceived}</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={12} className="text-center text-muted-foreground">
+                        No register summary data available for the selected range.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
 
             <div className="overflow-hidden rounded-xl border bg-background">
               <div className="border-b px-4 py-3">
@@ -891,15 +1223,12 @@ const AdminDashboard = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-xl border p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-semibold text-foreground">Zoho CRM</p>
                 <p className="text-xs text-muted-foreground">Push lead activities and tasks from MobileCRM to Zoho CRM records.</p>
               </div>
-              <Switch
-                checked={zohoConnector.enabled}
-                onCheckedChange={(checked) => setZohoConnector((prev) => ({ ...prev, enabled: checked }))}
-              />
+              {zohoStatus?.connected ? <Badge className="bg-emerald-600 text-white">Connected</Badge> : <Badge variant="secondary">Not Connected</Badge>}
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
@@ -912,28 +1241,51 @@ const AdminDashboard = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Zoho OAuth Access Token</Label>
+                <Label>Zoho Accounts Server</Label>
                 <Input
-                  type="password"
-                  value={zohoConnector.accessToken}
-                  onChange={(event) => setZohoConnector((prev) => ({ ...prev, accessToken: event.target.value }))}
-                  placeholder="1000.xxxxx"
+                  value={zohoConnector.accountsServer}
+                  onChange={(event) => setZohoConnector((prev) => ({ ...prev, accountsServer: event.target.value.trim() }))}
+                  placeholder="https://accounts.zoho.com"
                 />
               </div>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               Required scopes: ZohoCRM.modules.tasks.CREATE, ZohoCRM.modules.calls.CREATE, ZohoCRM.modules.leads.READ, ZohoSearch.securesearch.READ
             </p>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                onClick={handleConnectZoho}
+                disabled={zohoAuthorizeMutation.isPending || zohoStatusLoading}
+              >
+                {zohoAuthorizeMutation.isPending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+                {zohoStatus?.connected ? 'Reconnect Zoho CRM' : 'Connect Zoho CRM'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => zohoDisconnectMutation.mutate()}
+                disabled={!zohoStatus?.connected || zohoDisconnectMutation.isPending}
+              >
+                {zohoDisconnectMutation.isPending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Disconnect
+              </Button>
+            </div>
+
+            {zohoStatus?.connected && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Connected. Token expiry: {zohoStatus.expiresAt ? format(new Date(zohoStatus.expiresAt), 'dd MMM yyyy, h:mm a') : 'managed automatically'}
+              </p>
+            )}
           </div>
 
           <div className="rounded-xl border bg-muted/20 p-4">
             <p className="text-sm font-medium text-foreground">How this works (Zoho Integration)</p>
             <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
-              <p>1. Enable Zoho CRM and add a valid Zoho OAuth access token.</p>
-              <p>2. On sync, MobileCRM matches each record to a Zoho lead by email, then phone, then name.</p>
-              <p>3. Matched records are pushed to Zoho: tasks go to Tasks, call activities go to Calls.</p>
-              <p>4. The sync summary shows how many records were pushed and how many failed.</p>
-              <p>5. If a lead is not found in Zoho, that record is skipped and marked in the failure list.</p>
+              <p>1. Click Connect Zoho CRM and complete OAuth in the popup.</p>
+              <p>2. OAuth tokens are stored securely on the server, not in the browser.</p>
+              <p>3. During sync, MobileCRM matches each record to a Zoho lead by email, then phone, then name.</p>
+              <p>4. Matched records are pushed to Zoho: tasks go to Tasks, call activities go to Calls.</p>
+              <p>5. The sync summary reports pushed vs failed records, and skipped lead matches.</p>
             </div>
           </div>
 
@@ -946,7 +1298,7 @@ const AdminDashboard = () => {
                   setZohoSyncState((prev) => ({ ...prev, tasks: true }));
                   zohoSyncMutation.mutate({ mode: 'tasks' });
                 }}
-                disabled={zohoSyncState.tasks || zohoSyncMutation.isPending || !zohoConnector.enabled}
+                disabled={zohoSyncState.tasks || zohoSyncMutation.isPending || !zohoStatus?.connected}
               >
                 {zohoSyncState.tasks ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <SendHorizontal className="mr-2 h-4 w-4" />}
                 Push Tasks to Zoho
@@ -957,7 +1309,7 @@ const AdminDashboard = () => {
                   setZohoSyncState((prev) => ({ ...prev, activities: true }));
                   zohoSyncMutation.mutate({ mode: 'activities' });
                 }}
-                disabled={zohoSyncState.activities || zohoSyncMutation.isPending || !zohoConnector.enabled}
+                disabled={zohoSyncState.activities || zohoSyncMutation.isPending || !zohoStatus?.connected}
               >
                 {zohoSyncState.activities ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <SendHorizontal className="mr-2 h-4 w-4" />}
                 Push Activities to Zoho
