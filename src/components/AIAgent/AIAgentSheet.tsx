@@ -38,6 +38,23 @@ interface AIAgentSheetProps {
   onImportRecordings: () => void;
 }
 
+const speakAriaResponse = (text: string): void => {
+  if (!("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voices = window.speechSynthesis.getVoices();
+  const femaleVoice =
+    voices.find((v) => /female/i.test(v.name)) ??
+    voices.find((v) => /\b(samantha|victoria|karen|moira|veena|fiona|tessa|zira)\b/i.test(v.name)) ??
+    voices.find((v) => v.lang.startsWith('en')) ??
+    null;
+  if (femaleVoice) utterance.voice = femaleVoice;
+  utterance.pitch = 1.1;
+  utterance.rate = 1.0;
+  utterance.lang = 'en-IN';
+  window.speechSynthesis.speak(utterance);
+};
+
 const QUICK_PROMPTS = [
   { label: "Today's overview 📊", prompt: "Give me a quick CRM overview for today" },
   { label: "Pending follow-ups 📞", prompt: "Which leads need follow-up?" },
@@ -98,6 +115,7 @@ const AIAgentSheet = ({
   const voiceBaseInputRef = useRef('');
   const shouldAutoSendVoiceRef = useRef(false);
   const isVoiceStartPendingRef = useRef(false);
+  const spokenMsgIdRef = useRef<string | null>(null);
   const autoPromptedThisOpenRef = useRef(false);
 
   const { messages, isLoading, sendMessage, clearConversation } = useAIAgent({
@@ -126,10 +144,21 @@ const AIAgentSheet = ({
     }
   }, [isOpen]);
 
+  // Speak ARIA's responses with a female voice
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.role !== 'assistant' || lastMsg.isLoading) return;
+    if (spokenMsgIdRef.current === lastMsg.id) return;
+    spokenMsgIdRef.current = lastMsg.id;
+    speakAriaResponse(lastMsg.content);
+  }, [messages]);
+
   useEffect(() => {
     if (!isOpen) {
       autoPromptedThisOpenRef.current = false;
       isVoiceStartPendingRef.current = false;
+      window.speechSynthesis?.cancel();
+      spokenMsgIdRef.current = null;
       return;
     }
 

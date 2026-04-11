@@ -54,32 +54,21 @@ import {
   Pencil,
   Trash2,
   Upload,
-  BarChart3,
   Activity,
-  GripVertical,
   Link2,
   RefreshCw,
   SendHorizontal,
 } from 'lucide-react';
-import {
-  endOfDay,
-  format,
-  isAfter,
-  isBefore,
-  startOfDay,
-  subDays,
-} from 'date-fns';
+import { format } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
 import type { Database } from '@/integrations/supabase/types';
 
-type AdminSection = 'reports' | 'leads' | 'marketplace' | 'settings';
+type AdminSection = 'leads' | 'marketplace' | 'settings';
 type SettingsTab = 'users' | 'activity';
 type Lead = Database['public']['Tables']['leads']['Row'];
 type LeadActivity = Database['public']['Tables']['lead_activities']['Row'];
-type CallLog = Database['public']['Tables']['call_logs']['Row'];
 type LeadTask = Database['public']['Tables']['lead_tasks']['Row'];
-type ReportRow = Record<string, string | number>;
 
 interface Profile {
   id: string;
@@ -91,38 +80,6 @@ interface Profile {
 
 interface UserWithRole extends Profile {
   role: 'admin' | 'sales' | null;
-}
-
-type ReportBuilderState = {
-  dateRange: '7d' | '30d' | '90d' | 'custom';
-  ownerId: string;
-  customStartDate: string;
-  customEndDate: string;
-};
-
-interface ReportPreview {
-  title: string;
-  description: string;
-  callTypeBreakdown: Array<{ label: string; count: number; durationSeconds: number; colorClass: string }>;
-  kpis: Array<{ label: string; value: string }>;
-  donutSlices: Array<{ label: string; percent: number; color: string }>;
-  registerSummaryRows: Array<{
-    contact: string;
-    phone: string;
-    totalCalls: number;
-    totalDurationSeconds: number;
-    incomingCalls: number;
-    incomingDurationSeconds: number;
-    outgoingCalls: number;
-    outgoingDurationSeconds: number;
-    missedCalls: number;
-    rejectedCalls: number;
-    neverAttended: number;
-    neverReceived: number;
-  }>;
-  columns: string[];
-  rows: ReportRow[];
-  filename: string;
 }
 
 type ZohoConnectorState = {
@@ -144,7 +101,7 @@ const AdminDashboard = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [activeSection, setActiveSection] = useState<AdminSection>('reports');
+  const [activeSection, setActiveSection] = useState<AdminSection>('leads');
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('users');
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -168,12 +125,6 @@ const AdminDashboard = () => {
     isActive: true,
   });
 
-  const [reportBuilder, setReportBuilder] = useState<ReportBuilderState>({
-    dateRange: '30d',
-    ownerId: 'all',
-    customStartDate: format(subDays(new Date(), 29), 'yyyy-MM-dd'),
-    customEndDate: format(new Date(), 'yyyy-MM-dd'),
-  });
   const [zohoConnector, setZohoConnector] = useState<ZohoConnectorState>({
     apiDomain: 'https://www.zohoapis.com',
     accountsServer: 'https://accounts.zoho.com',
@@ -292,20 +243,6 @@ const AdminDashboard = () => {
     enabled: role === 'admin',
   });
 
-  const { data: callLogs = [] } = useQuery({
-    queryKey: ['admin-call-logs'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('call_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(500);
-      if (error) throw error;
-      return data as CallLog[];
-    },
-    enabled: role === 'admin',
-  });
-
   const { data: leadTasks = [] } = useQuery({
     queryKey: ['admin-lead-tasks'],
     queryFn: async () => {
@@ -320,256 +257,8 @@ const AdminDashboard = () => {
     enabled: role === 'admin',
   });
 
-  const salesUsers = useMemo(
-    () => users.filter((entry) => entry.role === 'sales' && entry.is_active),
-    [users]
-  );
-
   const leadMap = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads]);
   const userMap = useMemo(() => new Map(users.map((entry) => [entry.id, entry])), [users]);
-  const selectedOwner = reportBuilder.ownerId === 'all' ? null : userMap.get(reportBuilder.ownerId);
-
-  const reportDateWindow = useMemo(() => {
-    const today = new Date();
-    const fallback = {
-      start: startOfDay(subDays(today, 29)),
-      end: endOfDay(today),
-      label: 'Last 30 days',
-      hasInvalidCustomRange: false,
-    };
-
-    if (reportBuilder.dateRange === 'custom') {
-      if (!reportBuilder.customStartDate || !reportBuilder.customEndDate) {
-        return { ...fallback, label: 'Custom range', hasInvalidCustomRange: true };
-      }
-
-      const start = startOfDay(new Date(reportBuilder.customStartDate));
-      const end = endOfDay(new Date(reportBuilder.customEndDate));
-
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || isAfter(start, end)) {
-        return { ...fallback, label: 'Custom range', hasInvalidCustomRange: true };
-      }
-
-      return {
-        start,
-        end,
-        label: `${format(start, 'dd MMM yyyy')} - ${format(end, 'dd MMM yyyy')}`,
-        hasInvalidCustomRange: false,
-      };
-    }
-
-    const days = reportBuilder.dateRange === '7d' ? 6 : reportBuilder.dateRange === '90d' ? 89 : 29;
-    return {
-      start: startOfDay(subDays(today, days)),
-      end: endOfDay(today),
-      label: reportBuilder.dateRange === '7d' ? 'Last 7 days' : reportBuilder.dateRange === '90d' ? 'Last 90 days' : 'Last 30 days',
-      hasInvalidCustomRange: false,
-    };
-  }, [reportBuilder.customEndDate, reportBuilder.customStartDate, reportBuilder.dateRange]);
-
-  const reportPreview = useMemo<ReportPreview>(() => {
-    const isWithinRange = (value: string | null | undefined) => {
-      if (!value) return false;
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return false;
-      return !isBefore(date, reportDateWindow.start) && !isAfter(date, reportDateWindow.end);
-    };
-
-    const ownerMatches = (userId: string | null) =>
-      reportBuilder.ownerId === 'all' || (!!userId && userId === reportBuilder.ownerId);
-
-    const filteredCalls = callLogs
-      .filter((call) => isWithinRange(call.created_at) && ownerMatches(call.user_id))
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-    const formatDuration = (seconds: number) => {
-      const safeSeconds = Math.max(0, Math.round(seconds));
-      const hours = Math.floor(safeSeconds / 3600);
-      const minutes = Math.floor((safeSeconds % 3600) / 60);
-      const secs = safeSeconds % 60;
-      return `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(secs).padStart(2, '0')}s`;
-    };
-
-    const hasOutcome = (call: CallLog, keywords: string[]) => {
-      const normalized = (call.outcome || '').toLowerCase();
-      return keywords.some((keyword) => normalized.includes(keyword));
-    };
-
-    const totalDurationSeconds = filteredCalls.reduce((sum, call) => sum + (call.duration ?? 0), 0);
-    const connectedCalls = filteredCalls.filter((call) => (call.duration ?? 0) > 0);
-    const incomingCalls = filteredCalls.filter((call) => call.type === 'incoming');
-    const outgoingCalls = filteredCalls.filter((call) => call.type === 'outgoing');
-    const missedCalls = filteredCalls.filter((call) => call.type === 'missed');
-    const rejectedCalls = filteredCalls.filter((call) => hasOutcome(call, ['reject']));
-    const neverAttendedCalls = filteredCalls.filter((call) => hasOutcome(call, ['never attended', 'unattended']));
-    const neverReceivedCalls = filteredCalls.filter((call) => hasOutcome(call, ['never received']));
-    const notPickedCalls = filteredCalls.filter((call) =>
-      hasOutcome(call, ['not pick', 'not picked', 'no answer', 'unanswered'])
-      || (call.type === 'outgoing' && (call.duration ?? 0) === 0)
-    );
-    const shortCalls = connectedCalls.filter((call) => (call.duration ?? 0) < 30);
-
-    const taskLeadIds = new Set(
-      leadTasks
-        .filter((task) => task.lead_id)
-        .map((task) => task.lead_id as string),
-    );
-    const callsWithoutTasks = filteredCalls.filter((call) => call.lead_id && !taskLeadIds.has(call.lead_id));
-    const followUpRisk = filteredCalls.length ? Math.round((callsWithoutTasks.length / filteredCalls.length) * 100) : 0;
-
-    const scopeLabel = selectedOwner?.full_name || selectedOwner?.email || 'All users';
-    const registerMap = new Map<string, {
-      contact: string;
-      phone: string;
-      totalCalls: number;
-      totalDurationSeconds: number;
-      incomingCalls: number;
-      incomingDurationSeconds: number;
-      outgoingCalls: number;
-      outgoingDurationSeconds: number;
-      missedCalls: number;
-      rejectedCalls: number;
-      neverAttended: number;
-      neverReceived: number;
-    }>();
-
-    filteredCalls.forEach((call) => {
-      const phone = call.phone || 'Unknown';
-      const existing = registerMap.get(phone) || {
-        contact: call.contact_name || 'Unknown',
-        phone,
-        totalCalls: 0,
-        totalDurationSeconds: 0,
-        incomingCalls: 0,
-        incomingDurationSeconds: 0,
-        outgoingCalls: 0,
-        outgoingDurationSeconds: 0,
-        missedCalls: 0,
-        rejectedCalls: 0,
-        neverAttended: 0,
-        neverReceived: 0,
-      };
-
-      existing.totalCalls += 1;
-      existing.totalDurationSeconds += call.duration ?? 0;
-
-      if (call.type === 'incoming') {
-        existing.incomingCalls += 1;
-        existing.incomingDurationSeconds += call.duration ?? 0;
-      }
-
-      if (call.type === 'outgoing') {
-        existing.outgoingCalls += 1;
-        existing.outgoingDurationSeconds += call.duration ?? 0;
-      }
-
-      if (call.type === 'missed') {
-        existing.missedCalls += 1;
-      }
-
-      if (hasOutcome(call, ['reject'])) {
-        existing.rejectedCalls += 1;
-      }
-
-      if (hasOutcome(call, ['never attended', 'unattended'])) {
-        existing.neverAttended += 1;
-      }
-
-      if (hasOutcome(call, ['never received'])) {
-        existing.neverReceived += 1;
-      }
-
-      if (!existing.contact || existing.contact === 'Unknown') {
-        existing.contact = call.contact_name || existing.contact;
-      }
-
-      registerMap.set(phone, existing);
-    });
-
-    const registerSummaryRows = Array.from(registerMap.values())
-      .sort((a, b) => b.totalCalls - a.totalCalls)
-      .slice(0, 50);
-
-    const uniqueClients = new Set(filteredCalls.map((call) => call.phone).filter(Boolean)).size;
-    const incomingDurationSeconds = incomingCalls.reduce((sum, call) => sum + (call.duration ?? 0), 0);
-    const outgoingDurationSeconds = outgoingCalls.reduce((sum, call) => sum + (call.duration ?? 0), 0);
-
-    const totalForDonut = incomingCalls.length + outgoingCalls.length + missedCalls.length + rejectedCalls.length;
-    const donutPercent = (value: number) => (totalForDonut ? Number(((value / totalForDonut) * 100).toFixed(1)) : 0);
-
-    return {
-      title: 'Detailed Call Activity Report - Summary',
-      description: `${scopeLabel} · ${reportDateWindow.label}`,
-      callTypeBreakdown: [
-        {
-          label: 'Incoming',
-          count: incomingCalls.length,
-          durationSeconds: incomingDurationSeconds,
-          colorClass: 'text-emerald-600',
-        },
-        {
-          label: 'Outgoing',
-          count: outgoingCalls.length,
-          durationSeconds: outgoingDurationSeconds,
-          colorClass: 'text-amber-600',
-        },
-        {
-          label: 'Missed',
-          count: missedCalls.length,
-          durationSeconds: 0,
-          colorClass: 'text-rose-600',
-        },
-        {
-          label: 'Rejected',
-          count: rejectedCalls.length,
-          durationSeconds: 0,
-          colorClass: 'text-red-700',
-        },
-      ],
-      kpis: [
-        { label: 'Never Attended', value: String(neverAttendedCalls.length) },
-        { label: 'Not Pickup by client', value: String(notPickedCalls.length) },
-        { label: 'Connected calls', value: String(connectedCalls.length) },
-        { label: 'Unique clients', value: String(uniqueClients) },
-        { label: 'Working Hours', value: formatDuration(totalDurationSeconds) },
-        { label: 'Follow-up risk', value: `${followUpRisk}%` },
-      ],
-      donutSlices: [
-        { label: 'Incoming', percent: donutPercent(incomingCalls.length), color: '#16a34a' },
-        { label: 'Outgoing', percent: donutPercent(outgoingCalls.length), color: '#f59e0b' },
-        { label: 'Missed', percent: donutPercent(missedCalls.length), color: '#ef4444' },
-        { label: 'Rejected', percent: donutPercent(rejectedCalls.length), color: '#991b1b' },
-      ],
-      registerSummaryRows,
-      columns: ['Call Time', 'Owner', 'Lead', 'Contact', 'Direction', 'Duration (s)', 'Outcome', 'Next Action'],
-      rows: filteredCalls.slice(0, 200).map((call) => {
-        const lead = leadMap.get(call.lead_id || '');
-        const owner = userMap.get(call.user_id || '');
-        const hasTask = !!(call.lead_id && taskLeadIds.has(call.lead_id));
-        return {
-          'Call Time': format(new Date(call.created_at), 'dd MMM yyyy, h:mm a'),
-          Owner: owner?.full_name || owner?.email || 'System',
-          Lead: lead?.name || 'Unlinked lead',
-          Contact: call.contact_name || call.phone,
-          Direction: call.type,
-          'Duration (s)': call.duration ?? 0,
-          Outcome: call.outcome || 'Not logged',
-          'Next Action': hasTask ? 'Task linked' : 'Create follow-up task',
-        };
-      }),
-      filename: 'detailed-call-activity-report',
-    };
-  }, [
-    callLogs,
-    leadMap,
-    leadTasks,
-    reportBuilder.ownerId,
-    reportDateWindow.end,
-    reportDateWindow.label,
-    reportDateWindow.start,
-    selectedOwner,
-    userMap,
-  ]);
 
   const createUser = useMutation({
     mutationFn: async (data: { email: string; password: string; fullName: string; role: 'admin' | 'sales' }) => {
@@ -685,46 +374,6 @@ const AdminDashboard = () => {
       isActive: selectedUser.is_active,
     });
     setIsEditDialogOpen(true);
-  };
-
-  const handleGenerateReport = () => {
-    toast({
-      title: reportPreview.title,
-      description: `Showing ${reportPreview.rows.length} rows for ${reportPreview.description}.`,
-    });
-  };
-
-  const handleExportReport = () => {
-    if (!reportPreview.rows.length) {
-      toast({
-        title: 'Nothing to export',
-        description: 'Adjust the filters or date range to generate report rows first.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const csvRows = [
-      reportPreview.columns.join(','),
-      ...reportPreview.rows.map((row) =>
-        reportPreview.columns
-          .map((column) => `"${String(row[column] ?? '').replace(/"/g, '""')}"`)
-          .join(','),
-      ),
-    ];
-
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${reportPreview.filename}-${format(new Date(), 'yyyyMMdd-HHmm')}.csv`;
-    link.click();
-    window.URL.revokeObjectURL(url);
-
-    toast({
-      title: 'CSV exported',
-      description: `${reportPreview.title} downloaded successfully.`,
-    });
   };
 
   const zohoSyncMutation = useMutation({
@@ -896,297 +545,6 @@ const AdminDashboard = () => {
       toast({ title: 'Zoho connect failed', description: error instanceof Error ? error.message : 'Failed to start OAuth', variant: 'destructive' });
     }
   };
-
-  const renderDashboard = () => (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />
-            Detailed Call Activity Report
-          </CardTitle>
-          <CardDescription>Summary, call quality indicators, and register mobile number breakdown for operations and coaching.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className={`grid gap-4 md:grid-cols-2 ${reportBuilder.dateRange === 'custom' ? 'xl:grid-cols-5' : 'xl:grid-cols-3'}`}>
-
-            <div className="space-y-2">
-              <Label>Date Range</Label>
-              <Select
-                value={reportBuilder.dateRange}
-                onValueChange={(value: ReportBuilderState['dateRange']) =>
-                  setReportBuilder((prev) => ({ ...prev, dateRange: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="7d">Last 7 days</SelectItem>
-                  <SelectItem value="30d">Last 30 days</SelectItem>
-                  <SelectItem value="90d">Last 90 days</SelectItem>
-                  <SelectItem value="custom">Custom Range</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {reportBuilder.dateRange === 'custom' && (
-              <>
-                <div className="space-y-2">
-                  <Label>Start Date</Label>
-                  <Input
-                    type="date"
-                    value={reportBuilder.customStartDate}
-                    onChange={(event) =>
-                      setReportBuilder((prev) => ({ ...prev, customStartDate: event.target.value }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>End Date</Label>
-                  <Input
-                    type="date"
-                    value={reportBuilder.customEndDate}
-                    onChange={(event) =>
-                      setReportBuilder((prev) => ({ ...prev, customEndDate: event.target.value }))
-                    }
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="space-y-2">
-              <Label>Owner Scope</Label>
-              <Select
-                value={reportBuilder.ownerId}
-                onValueChange={(value) => setReportBuilder((prev) => ({ ...prev, ownerId: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Users</SelectItem>
-                  {salesUsers.map((entry) => (
-                    <SelectItem key={entry.id} value={entry.id}>
-                      {entry.full_name || entry.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Button onClick={handleGenerateReport} disabled={reportDateWindow.hasInvalidCustomRange}>
-              Generate Report
-            </Button>
-            <Button variant="secondary" onClick={handleExportReport} disabled={!reportPreview.rows.length || reportDateWindow.hasInvalidCustomRange}>
-              Export CSV
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() =>
-                setReportBuilder({
-                  dateRange: '30d',
-                  ownerId: 'all',
-                  customStartDate: format(subDays(new Date(), 29), 'yyyy-MM-dd'),
-                  customEndDate: format(new Date(), 'yyyy-MM-dd'),
-                })
-              }
-            >
-              Reset Builder
-            </Button>
-          </div>
-
-          {reportDateWindow.hasInvalidCustomRange && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-              Choose a valid custom date range before generating the report.
-            </div>
-          )}
-
-          <div className="space-y-5 rounded-2xl border bg-muted/20 p-4">
-            <div className="inline-flex rounded-lg border bg-background p-1">
-              <div className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground">Summary</div>
-              <div className="px-3 py-1.5 text-sm text-muted-foreground">Analysis</div>
-              <div className="px-3 py-1.5 text-sm text-muted-foreground">Never Attended</div>
-              <div className="px-3 py-1.5 text-sm text-muted-foreground">Never Received</div>
-              <div className="px-3 py-1.5 text-sm text-muted-foreground">Call History</div>
-            </div>
-
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-semibold text-foreground">{reportPreview.title}</h3>
-                <p className="text-sm text-muted-foreground">{reportPreview.description}</p>
-              </div>
-              <Badge variant="secondary">Actionable</Badge>
-            </div>
-
-            <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-              <div className="overflow-hidden rounded-xl border bg-background">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Call Type</TableHead>
-                      <TableHead>Call</TableHead>
-                      <TableHead>Duration</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reportPreview.callTypeBreakdown.map((item) => (
-                      <TableRow key={item.label}>
-                        <TableCell className={`font-medium ${item.colorClass}`}>{item.label}</TableCell>
-                        <TableCell>{item.count}</TableCell>
-                        <TableCell>{item.durationSeconds > 0 ? `${Math.floor(item.durationSeconds / 3600)}h ${Math.floor((item.durationSeconds % 3600) / 60)}m ${item.durationSeconds % 60}s` : '-'}</TableCell>
-                      </TableRow>
-                    ))}
-                    <TableRow className="bg-muted/30">
-                      <TableCell className="font-semibold">Total</TableCell>
-                      <TableCell className="font-semibold">{reportPreview.rows.length}</TableCell>
-                      <TableCell className="font-semibold">
-                        {`${Math.floor(reportPreview.callTypeBreakdown.reduce((sum, item) => sum + item.durationSeconds, 0) / 3600)}h ${Math.floor((reportPreview.callTypeBreakdown.reduce((sum, item) => sum + item.durationSeconds, 0) % 3600) / 60)}m ${reportPreview.callTypeBreakdown.reduce((sum, item) => sum + item.durationSeconds, 0) % 60}s`}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-                <div className="rounded-xl border bg-background p-4">
-                  <div className="space-y-2">
-                    {reportPreview.kpis.map((kpi) => (
-                      <div key={kpi.label} className="flex items-center justify-between gap-2 text-sm">
-                        <span className="text-muted-foreground">{kpi.label}</span>
-                        <span className="font-semibold text-foreground">{kpi.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border bg-background p-4">
-                  <p className="text-sm font-medium text-foreground">Calls</p>
-                  <div className="mt-3 flex items-center gap-4">
-                    <div
-                      className="h-40 w-40 rounded-full"
-                      style={{
-                        background: `conic-gradient(${reportPreview.donutSlices
-                          .map((slice, index, array) => {
-                            const previous = array
-                              .slice(0, index)
-                              .reduce((sum, current) => sum + current.percent, 0);
-                            const current = previous + slice.percent;
-                            return `${slice.color} ${previous}% ${current}%`;
-                          })
-                          .join(', ')})`,
-                      }}
-                    >
-                      <div className="m-7 flex h-26 w-26 items-center justify-center rounded-full bg-background text-xs font-semibold text-foreground">
-                        Calls
-                      </div>
-                    </div>
-                    <div className="space-y-1 text-xs">
-                      {reportPreview.donutSlices.map((slice) => (
-                        <div key={slice.label} className="flex items-center gap-2">
-                          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
-                          <span className="text-muted-foreground">{slice.label}</span>
-                          <span className="font-medium text-foreground">{slice.percent}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="overflow-hidden rounded-xl border bg-background">
-              <div className="border-b px-4 py-3">
-                <p className="text-sm font-medium text-foreground">Register mobile number summary</p>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Sr No.</TableHead>
-                    <TableHead>Registered Mobile</TableHead>
-                    <TableHead>Total Calls</TableHead>
-                    <TableHead>Total Duration</TableHead>
-                    <TableHead>Incoming Calls</TableHead>
-                    <TableHead>Incoming Duration</TableHead>
-                    <TableHead>Outgoing Calls</TableHead>
-                    <TableHead>Outgoing Duration</TableHead>
-                    <TableHead>Missed Calls</TableHead>
-                    <TableHead>Rejected Calls</TableHead>
-                    <TableHead>Never Attended</TableHead>
-                    <TableHead>Never Received</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportPreview.registerSummaryRows.length > 0 ? (
-                    reportPreview.registerSummaryRows.map((row, index) => (
-                      <TableRow key={`${row.phone}-${index}`}>
-                        <TableCell>{index + 1}</TableCell>
-                        <TableCell>
-                          <div className="font-medium text-foreground">{row.contact}</div>
-                          <div className="text-xs text-muted-foreground">{row.phone}</div>
-                        </TableCell>
-                        <TableCell>{row.totalCalls}</TableCell>
-                        <TableCell>{`${Math.floor(row.totalDurationSeconds / 3600)}h ${Math.floor((row.totalDurationSeconds % 3600) / 60)}m ${row.totalDurationSeconds % 60}s`}</TableCell>
-                        <TableCell className="text-emerald-600">{row.incomingCalls}</TableCell>
-                        <TableCell className="text-emerald-600">{`${Math.floor(row.incomingDurationSeconds / 3600)}h ${Math.floor((row.incomingDurationSeconds % 3600) / 60)}m ${row.incomingDurationSeconds % 60}s`}</TableCell>
-                        <TableCell className="text-amber-600">{row.outgoingCalls}</TableCell>
-                        <TableCell className="text-amber-600">{`${Math.floor(row.outgoingDurationSeconds / 3600)}h ${Math.floor((row.outgoingDurationSeconds % 3600) / 60)}m ${row.outgoingDurationSeconds % 60}s`}</TableCell>
-                        <TableCell className="text-rose-600">{row.missedCalls}</TableCell>
-                        <TableCell className="text-red-700">{row.rejectedCalls}</TableCell>
-                        <TableCell>{row.neverAttended}</TableCell>
-                        <TableCell>{row.neverReceived}</TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={12} className="text-center text-muted-foreground">
-                        No register summary data available for the selected range.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="overflow-hidden rounded-xl border bg-background">
-              <div className="border-b px-4 py-3">
-                <p className="text-sm font-medium text-foreground">Detailed call log table</p>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {reportPreview.columns.map((column) => (
-                      <TableHead key={column}>{column}</TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportPreview.rows.length > 0 ? (
-                    reportPreview.rows.map((row, index) => (
-                      <TableRow key={`${reportPreview.filename}-${index}`}>
-                        {reportPreview.columns.map((column) => (
-                          <TableCell key={column}>{String(row[column] ?? '-')}</TableCell>
-                        ))}
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={reportPreview.columns.length} className="text-center text-muted-foreground">
-                        No call rows match this report configuration yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
 
   const renderLeads = () => (
     <div className="space-y-4">
@@ -1554,13 +912,6 @@ const AdminDashboard = () => {
         <aside className="h-fit rounded-2xl border bg-card p-3 md:sticky md:top-24">
           <nav className="space-y-1">
             <button
-              onClick={() => setActiveSection('reports')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'reports' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-            >
-              <BarChart3 className="h-4 w-4" />
-              Reports
-            </button>
-            <button
               onClick={() => setActiveSection('leads')}
               className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'leads' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
             >
@@ -1585,7 +936,6 @@ const AdminDashboard = () => {
         </aside>
 
         <main className="min-w-0">
-          {activeSection === 'reports' && renderDashboard()}
           {activeSection === 'leads' && renderLeads()}
           {activeSection === 'marketplace' && renderMarketplace()}
           {activeSection === 'settings' && renderSettings()}
