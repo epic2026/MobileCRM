@@ -9,6 +9,7 @@ export type AgentActionType =
   | 'whatsapp_lead'
   | 'email_lead'
   | 'add_activity'
+  | 'add_note'
   | 'add_task'
   | 'add_meeting'
   | 'import_recordings'
@@ -42,6 +43,10 @@ const sanitizeAgentAction = (action: AgentAction | undefined): AgentAction => {
     case 'add_activity':
     case 'add_meeting':
       return isNonEmptyString(params.lead_id) && isNonEmptyString(params.title) ? action : { type: 'none', params: {} };
+    case 'add_note':
+      return isNonEmptyString(params.lead_id) && (isNonEmptyString(params.note) || isNonEmptyString(params.title))
+        ? action
+        : { type: 'none', params: {} };
     case 'add_task':
       return isNonEmptyString(params.lead_id) && isNonEmptyString(params.title) ? action : { type: 'none', params: {} };
     case 'import_recordings':
@@ -63,6 +68,7 @@ const normalizeAgentAction = (rawAction: unknown): AgentAction | undefined => {
     'whatsapp_lead',
     'email_lead',
     'add_activity',
+    'add_note',
     'add_task',
     'add_meeting',
     'import_recordings',
@@ -96,6 +102,136 @@ interface UseAIAgentOptions {
   onWhatsApp: (phone: string, name: string, leadId?: string) => void;
   onImportRecordings: () => void;
 }
+
+type LeadStatus = 'new' | 'contacted' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
+
+interface LightweightLead {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  notes: string | null;
+}
+
+const statusAliases: Record<string, LeadStatus> = {
+  new: 'new',
+  contacted: 'contacted',
+  contact: 'contacted',
+  qualified: 'qualified',
+  proposal: 'proposal',
+  negotiation: 'negotiation',
+  negotiated: 'negotiation',
+  won: 'won',
+  closedwon: 'won',
+  lost: 'lost',
+  closedlost: 'lost',
+};
+
+const normalizeText = (value: string) => value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const findLeadFromMessage = (message: string, leads: LightweightLead[]): LightweightLead | null => {
+  const normalizedMessage = normalizeText(message);
+  const messageDigits = message.replace(/\D/g, '');
+
+  if (messageDigits.length >= 8) {
+    const byPhone = leads.find((lead) => lead.phone.replace(/\D/g, '').endsWith(messageDigits.slice(-10)));
+    if (byPhone) return byPhone;
+  }
+
+  let bestLead: LightweightLead | null = null;
+  let bestScore = 0;
+
+  for (const lead of leads) {
+    const tokens = normalizeText(lead.name).split(' ').filter((token) => token.length >= 3);
+    const score = tokens.reduce((sum, token) => (normalizedMessage.includes(token) ? sum + 1 : sum), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestLead = lead;
+    }
+  }
+
+  return bestScore > 0 ? bestLead : null;
+};
+
+const extractStatusUpdate = (message: string): LeadStatus | null => {
+  const normalized = normalizeText(message).replace(/\s+/g, '');
+  for (const [alias, status] of Object.entries(statusAliases)) {
+    if (normalized.includes(alias)) return status;
+  }
+  return null;
+};
+
+const inferActionLocally = (text: string, leads: LightweightLead[]): AgentAction => {
+  const message = text.trim();
+  const normalized = normalizeText(message);
+  const lead = findLeadFromMessage(message, leads);
+
+  const isCallIntent = /\b(call|dial|ring|phone)\b/.test(normalized);
+  if (isCallIntent && lead) {
+    return {
+      type: 'call_lead',
+      params: { lead_id: lead.id, lead_name: lead.name, phone: lead.phone },
+    };
+  }
+
+  const isTaskIntent = /\b(task|follow up|followup|todo|to do|remind)\b/.test(normalized) && /\b(add|create|set|make)\b/.test(normalized);
+  if (isTaskIntent && lead) {
+    return {
+      type: 'add_task',
+      params: {
+        lead_id: lead.id,
+        lead_name: lead.name,
+        title: `Follow up with ${lead.name}`,
+        description: message,
+        due_date: null,
+      },
+    };
+  }
+
+  const isActivityIntent = /\b(activity|log activity|log interaction|add activity)\b/.test(normalized);
+  if (isActivityIntent && lead) {
+    return {
+      type: 'add_activity',
+      params: {
+        lead_id: lead.id,
+        lead_name: lead.name,
+        type: 'note',
+        title: `Activity logged for ${lead.name}`,
+        description: message,
+      },
+    };
+  }
+
+  const isNotesIntent = /\b(note|notes)\b/.test(normalized) && /\b(add|append|save|update|write)\b/.test(normalized);
+  if (isNotesIntent && lead) {
+    return {
+      type: 'add_note',
+      params: {
+        lead_id: lead.id,
+        lead_name: lead.name,
+        title: `Note for ${lead.name}`,
+        note: message,
+      },
+    };
+  }
+
+  const isUpdateIntent = /\b(update|change|move|mark)\b/.test(normalized) && /\b(lead|status)\b/.test(normalized);
+  if (isUpdateIntent && lead) {
+    const status = extractStatusUpdate(normalized);
+    if (status) {
+      return {
+        type: 'update_lead',
+        params: {
+          lead_id: lead.id,
+          lead_name: lead.name,
+          updates: { status },
+        },
+      };
+    }
+  }
+
+  return { type: 'none', params: {} };
+};
 
 export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgentOptions) => {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
@@ -188,6 +324,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         }
 
         case 'add_activity':
+        case 'add_note':
         case 'add_meeting': {
           const { lead_id, type, title, description } = safeParams as {
             lead_id: string;
@@ -196,6 +333,20 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
             description?: string;
           };
           if (!user || !lead_id) break;
+
+          if (action.type === 'add_note') {
+            const noteText = isNonEmptyString((safeParams as { note?: string }).note)
+              ? ((safeParams as { note: string }).note)
+              : description ?? title ?? 'Note added by ARIA';
+
+            const { data: leadData } = await supabase.from('leads').select('notes').eq('id', lead_id).single();
+            const existingNotes = typeof leadData?.notes === 'string' ? leadData.notes.trim() : '';
+            const nextNotes = existingNotes ? `${existingNotes}\n${noteText}` : noteText;
+
+            await supabase.from('leads').update({ notes: nextNotes }).eq('id', lead_id);
+            queryClient.invalidateQueries({ queryKey: ['leads'] });
+          }
+
           await supabase.from('lead_activities').insert({
             lead_id,
             type: type ?? 'note',
@@ -238,6 +389,20 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
     },
     [user, queryClient, onCall, onWhatsApp, onImportRecordings],
   );
+
+  const fetchLeadsForFallback = useCallback(async (): Promise<LightweightLead[]> => {
+    const { data, error } = await supabase
+      .from('leads')
+      .select('id, name, phone, email, notes')
+      .order('updated_at', { ascending: false })
+      .limit(200);
+
+    if (error || !Array.isArray(data)) {
+      return [];
+    }
+
+    return data as LightweightLead[];
+  }, []);
 
   const getValidAccessToken = useCallback(async () => {
     const {
@@ -372,10 +537,18 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         console.log('✅ API response received:', {
           hasMessage: !!data?.message,
           hasAction: !!data?.action,
-          actionType: data?.action?.type,
+          actionType: normalizeAgentAction(data?.action)?.type,
         });
 
-        const action = sanitizeAgentAction(normalizeAgentAction(data.action));
+        let action = sanitizeAgentAction(normalizeAgentAction(data.action));
+
+        if (action.type === 'none') {
+          const leads = await fetchLeadsForFallback();
+          const inferred = inferActionLocally(text.trim(), leads);
+          if (inferred.type !== 'none') {
+            action = inferred;
+          }
+        }
 
         // Execute side-effect actions
         if (action && action.type !== 'none') {
@@ -417,7 +590,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         setIsLoading(false);
       }
     },
-    [isLoading, executeAction, getValidAccessToken, invokeAgent],
+    [isLoading, executeAction, getValidAccessToken, invokeAgent, fetchLeadsForFallback],
   );
 
   const clearConversation = useCallback(() => {

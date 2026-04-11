@@ -31,8 +31,14 @@ const sanitizeAction = (rawAction: unknown) => {
     case "email_lead":
       return isNonEmptyString(params.email) ? { type, params } : fallback;
     case "add_activity":
+    case "add_note":
     case "add_meeting":
     case "add_task":
+      if (type === "add_note") {
+        return isNonEmptyString(params.lead_id) && (isNonEmptyString(params.note) || isNonEmptyString(params.title))
+          ? { type, params }
+          : fallback;
+      }
       return isNonEmptyString(params.lead_id) && isNonEmptyString(params.title) ? { type, params } : fallback;
     case "import_recordings":
     case "none":
@@ -67,6 +73,7 @@ const CRM_ACTION_TOOL = {
                 "whatsapp_lead",
                 "email_lead",
                 "add_activity",
+                "add_note",
                 "add_task",
                 "add_meeting",
                 "import_recordings",
@@ -221,6 +228,7 @@ ACTION PARAMS FORMAT:
 - whatsapp_lead: { lead_id, lead_name, phone }
 - email_lead: { lead_id, lead_name, email }
 - add_activity: { lead_id, lead_name, type: "call"|"email"|"meeting"|"note", title, description? }
+- add_note: { lead_id, lead_name, note, title? }
 - add_task: { lead_id, lead_name, title, description?, due_date? (ISO 8601 string or null) }
 - add_meeting: { lead_id, lead_name, type: "meeting", title, description? }
 - import_recordings: {}`;

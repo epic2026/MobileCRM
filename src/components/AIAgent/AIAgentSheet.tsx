@@ -47,6 +47,17 @@ const QUICK_PROMPTS = [
   { label: "What can you do? 💡", prompt: "What actions can you do for me?" },
 ];
 
+const AI_ACTIONS = [
+  'Call a lead (native dialer)',
+  'Create a task for a lead',
+  'Add activity on a lead',
+  'Update lead status/details',
+  'Add notes to a lead',
+  'Open WhatsApp for a lead',
+  'Open email for a lead',
+  'Import call recordings',
+];
+
 const ACTION_LABELS: Partial<Record<AgentActionType, string>> = {
   update_lead: '✏️ Lead updated',
   call_lead: '📞 Opening dialer',
@@ -441,6 +452,17 @@ const AIAgentSheet = ({
                       </p>
                     </div>
 
+                    <div className="w-full rounded-xl border border-violet-500/25 bg-violet-500/5 p-3">
+                      <p className="text-[11px] font-semibold tracking-wide text-violet-600 mb-2">AI Actions</p>
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {AI_ACTIONS.map((action) => (
+                          <div key={action} className="text-[11px] text-violet-700/90 leading-snug">
+                            • {action}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Quick action chips */}
                     <div className="w-full flex flex-wrap gap-2 justify-center">
                       {QUICK_PROMPTS.map((qp) => (
@@ -550,7 +572,7 @@ const AIAgentSheet = ({
                   onClick={isListening ? handleVoiceStop : () => void handleVoiceStart(false)}
                   disabled={isLoading}
                   className={cn(
-                    'w-full rounded-2xl border px-4 py-4 text-left transition-all',
+                    'w-full rounded-2xl border px-4 py-4 transition-all',
                     isListening
                       ? 'border-violet-500 bg-violet-600 text-white shadow-[0_0_18px_rgba(139,92,246,0.35)]'
                       : 'border-violet-300/50 bg-violet-50 hover:bg-violet-100 text-violet-950',
@@ -558,7 +580,7 @@ const AIAgentSheet = ({
                   )}
                   aria-label={isListening ? 'Stop listening' : 'Tap to speak'}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center gap-3">
                     <div
                       className={cn(
                         'flex h-12 w-12 items-center justify-center rounded-full',
@@ -573,22 +595,15 @@ const AIAgentSheet = ({
                         <Mic className="h-5 w-5" />
                       )}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className={cn('text-base font-semibold', isListening ? 'text-white' : 'text-violet-950')}>
-                        {isListening ? 'Listening... tap to stop' : 'Tap to speak'}
-                      </p>
-                      <p className={cn('text-sm', isListening ? 'text-white/80' : 'text-violet-900/70')}>
-                        {inputText.trim()
-                          ? inputText
-                          : 'Say things like "Call Akhil" or "Create a follow-up task for tomorrow at 2pm"'}
-                      </p>
-                    </div>
+                    <p className={cn('text-base font-semibold', isListening ? 'text-white' : 'text-violet-950')}>
+                      {isListening ? 'Listening... tap to stop' : 'Tap to speak'}
+                    </p>
                   </div>
                 </button>
                 <p className="text-[9px] text-muted-foreground/40 text-center mt-2">
                   {isNativeApp() || hasBrowserSpeechSupport
-                    ? 'Tap ARIA, speak naturally, and ARIA auto-executes actions'
-                    : 'Voice input is unavailable on this device, but typed commands still work'}
+                    ? 'Speak naturally. ARIA will execute supported CRM actions automatically.'
+                    : 'Voice input is unavailable on this device.'}
                 </p>
               </div>
             </div>
