@@ -57,17 +57,20 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // Derive the public callback URL from SUPABASE_URL env variable.
-  // SUPABASE_URL = https://<ref>.supabase.co → functions live at https://<ref>.functions.supabase.co
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-  const callbackUrl = supabaseUrl
-    ? supabaseUrl.replace("https://", "https://").replace(".supabase.co", ".functions.supabase.co") + "/zoho_oauth"
+  // Derive the stable public callback URL from SUPABASE_URL env variable.
+  // SUPABASE_URL = https://<ref>.supabase.co → functions at https://<ref>.functions.supabase.co
+  const supabaseUrlEnv = Deno.env.get("SUPABASE_URL") || "";
+  const callbackUrl = supabaseUrlEnv
+    ? supabaseUrlEnv.replace(".supabase.co", ".functions.supabase.co") + "/zoho_oauth"
     : (() => { const u = new URL(req.url); return `${u.origin}${u.pathname}`; })();
 
   if (req.method === "GET") {
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
-    const oauthError = url.searchParams.get("error");
+    const reqUrl = new URL(req.url);
+    const code = reqUrl.searchParams.get("code");
+    const state = reqUrl.searchParams.get("state");
+    const oauthError = reqUrl.searchParams.get("error");
+    // Zoho India passes back the actual accounts-server to use for token exchange.
+    const zohoAccountsServer = reqUrl.searchParams.get("accounts-server") || null;
 
     if (!code || !state || oauthError) {
       const message = oauthError || "Missing OAuth callback parameters";
@@ -103,7 +106,8 @@ serve(async (req) => {
       const token = await exchangeZohoCode({
         code,
         redirectUri: callbackUrl,
-        accountsServer: stateRow.accounts_server,
+        // Prefer Zoho's returned accounts-server from callback params (India/EU may differ).
+        accountsServer: zohoAccountsServer || stateRow.accounts_server,
       });
 
       if (!token.refresh_token) {
@@ -114,7 +118,7 @@ serve(async (req) => {
         accessToken: token.access_token,
         refreshToken: token.refresh_token,
         apiDomain: token.api_domain || stateRow.api_domain,
-        accountsServer: stateRow.accounts_server,
+        accountsServer: zohoAccountsServer || stateRow.accounts_server,
         expiresIn: token.expires_in,
         tokenType: token.token_type,
         scope: token.scope,
