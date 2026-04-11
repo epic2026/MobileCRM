@@ -137,6 +137,7 @@ const AdminDashboard = () => {
   });
   const [callDateFrom, setCallDateFrom] = useState(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [callDateTo, setCallDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [callReportView, setCallReportView] = useState<'user' | 'lead' | 'calendar'>('user');
 
   useEffect(() => {
     if (!isLoading && (!user || role !== 'admin')) {
@@ -702,49 +703,60 @@ const AdminDashboard = () => {
   };
 
   const renderLeads = () => (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" variant="outline">
-              <Upload className="mr-2 h-4 w-4" />
-              Import Leads
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>Import Leads</DialogTitle>
-              <DialogDescription>Upload CSV/Excel and import leads for assignment.</DialogDescription>
-            </DialogHeader>
-            <LeadImport />
-          </DialogContent>
-        </Dialog>
-      </div>
-      <LeadAssignment />
+    <div className="space-y-5">
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="flex flex-col gap-3 border-b bg-muted/20 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Lead Operations</CardTitle>
+            <CardDescription>Import, assign, and manage lead pipeline ownership across your sales team.</CardDescription>
+          </div>
+          <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="whitespace-nowrap">
+                <Upload className="mr-2 h-4 w-4" />
+                Import Leads
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Import Leads</DialogTitle>
+                <DialogDescription>Upload CSV/Excel and import leads for assignment.</DialogDescription>
+              </DialogHeader>
+              <LeadImport />
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+        <CardContent className="pt-5">
+          <LeadAssignment />
+        </CardContent>
+      </Card>
     </div>
   );
 
   const renderCallActivity = () => (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
+    <div className="space-y-5">
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="space-y-3 border-b bg-muted/20">
           <CardTitle className="flex items-center gap-2">
             <Phone className="h-5 w-5" />
             Call Activity Reports
           </CardTitle>
           <CardDescription>Actionable call reporting by user, by lead, and by calendar day.</CardDescription>
+          <div className="inline-flex w-fit items-center rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
+            Range: {format(new Date(callDateFrom), 'dd MMM yyyy')} - {format(new Date(callDateTo), 'dd MMM yyyy')}
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-3">
+        <CardContent className="space-y-5 pt-5">
+          <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label>From</Label>
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">From</Label>
               <Input type="date" value={callDateFrom} onChange={(event) => setCallDateFrom(event.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>To</Label>
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">To</Label>
               <Input type="date" value={callDateTo} onChange={(event) => setCallDateTo(event.target.value)} />
             </div>
-            <div className="flex items-end">
+            <div className="flex items-end justify-start md:justify-end">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -764,46 +776,70 @@ const AdminDashboard = () => {
           )}
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Card>
+            <Card className="border-border/70">
               <CardContent className="pt-4">
-                <p className="text-xs text-muted-foreground">Total Calls</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total Calls</p>
                 <p className="text-2xl font-semibold">{callActivityReport.totals.totalCalls}</p>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="border-border/70">
               <CardContent className="pt-4">
-                <p className="text-xs text-muted-foreground">Connected Calls</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Connected Calls</p>
                 <p className="text-2xl font-semibold">{callActivityReport.totals.totalConnectedCalls}</p>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="border-border/70">
               <CardContent className="pt-4">
-                <p className="text-xs text-muted-foreground">Missed Calls</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Missed Calls</p>
                 <p className="text-2xl font-semibold">{callActivityReport.totals.totalMissedCalls}</p>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="border-border/70">
               <CardContent className="pt-4">
-                <p className="text-xs text-muted-foreground">Talk Time</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Talk Time</p>
                 <p className="text-xl font-semibold">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
               </CardContent>
             </Card>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-3">
-            <Card className="xl:col-span-1">
+          <div className="inline-flex rounded-lg border bg-card p-1">
+            <button
+              onClick={() => setCallReportView('user')}
+              className={`rounded-md px-3 py-1.5 text-sm ${callReportView === 'user' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            >
+              By User
+            </button>
+            <button
+              onClick={() => setCallReportView('lead')}
+              className={`rounded-md px-3 py-1.5 text-sm ${callReportView === 'lead' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            >
+              By Lead
+            </button>
+            <button
+              onClick={() => setCallReportView('calendar')}
+              className={`rounded-md px-3 py-1.5 text-sm ${callReportView === 'calendar' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            >
+              By Calendar
+            </button>
+          </div>
+
+          {callReportView === 'user' && (
+            <Card className="border-border/70">
               <CardHeader>
-                <CardTitle className="text-base">By User</CardTitle>
-                <CardDescription>Who is handling and connecting the most calls.</CardDescription>
+                <CardTitle className="text-base">User Performance View</CardTitle>
+                <CardDescription>Measure each user's call load, connect quality, and direction mix.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="max-h-[420px] overflow-y-auto">
+                <div className="max-h-[540px] overflow-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>User</TableHead>
                         <TableHead>Calls</TableHead>
                         <TableHead>Connected</TableHead>
+                        <TableHead>Incoming</TableHead>
+                        <TableHead>Outgoing</TableHead>
+                        <TableHead>Missed</TableHead>
                         <TableHead>Duration</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -813,12 +849,15 @@ const AdminDashboard = () => {
                           <TableCell className="font-medium">{entry.user}</TableCell>
                           <TableCell>{entry.totalCalls}</TableCell>
                           <TableCell>{entry.connectedCalls}</TableCell>
+                          <TableCell>{entry.incomingCalls}</TableCell>
+                          <TableCell>{entry.outgoingCalls}</TableCell>
+                          <TableCell>{entry.missedCalls}</TableCell>
                           <TableCell>{formatCallDuration(entry.durationSeconds)}</TableCell>
                         </TableRow>
                       ))}
                       {callActivityReport.byUser.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground">No call data in selected range.</TableCell>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground">No call data in selected range.</TableCell>
                         </TableRow>
                       )}
                     </TableBody>
@@ -826,38 +865,43 @@ const AdminDashboard = () => {
                 </div>
               </CardContent>
             </Card>
+          )}
 
-            <Card className="xl:col-span-1">
+          {callReportView === 'lead' && (
+            <Card className="border-border/70">
               <CardHeader>
-                <CardTitle className="text-base">By Lead</CardTitle>
-                <CardDescription>Lead-level call intensity, ownership, and recency.</CardDescription>
+                <CardTitle className="text-base">Lead Engagement View</CardTitle>
+                <CardDescription>Track interaction intensity, ownership, and follow-up freshness by lead.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="max-h-[420px] overflow-y-auto">
+                <div className="max-h-[540px] overflow-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Lead / Contact</TableHead>
+                        <TableHead>Phone</TableHead>
                         <TableHead>Owner</TableHead>
                         <TableHead>Calls</TableHead>
+                        <TableHead>Connected</TableHead>
+                        <TableHead>Talk Time</TableHead>
                         <TableHead>Last Call</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {callActivityReport.byLead.map((entry) => (
                         <TableRow key={`${entry.lead}-${entry.phone}`}>
-                          <TableCell>
-                            <p className="font-medium">{entry.lead}</p>
-                            <p className="text-xs text-muted-foreground">{entry.phone}</p>
-                          </TableCell>
+                          <TableCell className="font-medium">{entry.lead}</TableCell>
+                          <TableCell>{entry.phone}</TableCell>
                           <TableCell>{entry.owner}</TableCell>
                           <TableCell>{entry.totalCalls}</TableCell>
+                          <TableCell>{entry.connectedCalls}</TableCell>
+                          <TableCell>{formatCallDuration(entry.durationSeconds)}</TableCell>
                           <TableCell>{format(new Date(entry.lastCallAt), 'dd MMM yyyy, h:mm a')}</TableCell>
                         </TableRow>
                       ))}
                       {callActivityReport.byLead.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground">No lead call data in selected range.</TableCell>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground">No lead call data in selected range.</TableCell>
                         </TableRow>
                       )}
                     </TableBody>
@@ -865,14 +909,16 @@ const AdminDashboard = () => {
                 </div>
               </CardContent>
             </Card>
+          )}
 
-            <Card className="xl:col-span-1">
+          {callReportView === 'calendar' && (
+            <Card className="border-border/70">
               <CardHeader>
-                <CardTitle className="text-base">By Calendar</CardTitle>
-                <CardDescription>Daily call trend for planning and monitoring.</CardDescription>
+                <CardTitle className="text-base">Calendar Trend View</CardTitle>
+                <CardDescription>Daily pattern of call volume, connect rate, and call direction.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="max-h-[420px] overflow-y-auto">
+                <div className="max-h-[540px] overflow-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -880,6 +926,9 @@ const AdminDashboard = () => {
                         <TableHead>Total</TableHead>
                         <TableHead>Connected</TableHead>
                         <TableHead>Missed</TableHead>
+                        <TableHead>Incoming</TableHead>
+                        <TableHead>Outgoing</TableHead>
+                        <TableHead>Talk Time</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -889,11 +938,14 @@ const AdminDashboard = () => {
                           <TableCell>{entry.totalCalls}</TableCell>
                           <TableCell>{entry.connectedCalls}</TableCell>
                           <TableCell>{entry.missedCalls}</TableCell>
+                          <TableCell>{entry.incomingCalls}</TableCell>
+                          <TableCell>{entry.outgoingCalls}</TableCell>
+                          <TableCell>{formatCallDuration(entry.durationSeconds)}</TableCell>
                         </TableRow>
                       ))}
                       {callActivityReport.byCalendar.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground">No daily call trend data in selected range.</TableCell>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground">No daily call trend data in selected range.</TableCell>
                         </TableRow>
                       )}
                     </TableBody>
@@ -901,24 +953,24 @@ const AdminDashboard = () => {
                 </div>
               </CardContent>
             </Card>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 
   const renderMarketplace = () => (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
+    <div className="space-y-5">
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="border-b bg-muted/20">
           <CardTitle className="flex items-center gap-2">
             <Link2 className="h-5 w-5" />
             Connect Your CRM
           </CardTitle>
-          <CardDescription>Zoho CRM connector is available now. Additional CRM integrations will be added later.</CardDescription>
+          <CardDescription>Enterprise CRM synchronization workspace for secure OAuth, auditability, and controlled sync actions.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-xl border p-4">
+        <CardContent className="space-y-4 pt-5">
+          <div className="rounded-xl border bg-background p-5 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-semibold text-foreground">Zoho CRM</p>
@@ -974,7 +1026,7 @@ const AdminDashboard = () => {
             )}
           </div>
 
-          <div className="rounded-xl border bg-muted/20 p-4">
+          <div className="rounded-xl border bg-muted/20 p-5">
             <p className="text-sm font-medium text-foreground">How this works (Zoho Integration)</p>
             <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
               <p>1. Click Connect Zoho CRM and complete OAuth in the popup.</p>
@@ -985,7 +1037,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          <div className="rounded-xl border bg-muted/20 p-4">
+          <div className="rounded-xl border bg-muted/20 p-5">
             <p className="text-sm font-medium text-foreground">Sync Actions</p>
             <p className="mb-3 text-xs text-muted-foreground">Push records against matched Zoho leads (matched by email, then phone, then name).</p>
             <div className="flex flex-wrap gap-2">
@@ -1018,25 +1070,33 @@ const AdminDashboard = () => {
   );
 
   const renderSettings = () => (
-    <div className="space-y-4">
-      <div className="inline-flex rounded-lg border bg-card p-1">
-        <button
-          onClick={() => setSettingsTab('users')}
-          className={`rounded-md px-4 py-2 text-sm ${settingsTab === 'users' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
-        >
-          User
-        </button>
-        <button
-          onClick={() => setSettingsTab('activity')}
-          className={`rounded-md px-4 py-2 text-sm ${settingsTab === 'activity' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
-        >
-          Activity
-        </button>
-      </div>
+    <div className="space-y-5">
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="border-b bg-muted/20">
+          <CardTitle>Administration & Access</CardTitle>
+          <CardDescription>Manage user lifecycle, role governance, and activity auditing.</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <div className="inline-flex rounded-lg border bg-card p-1">
+            <button
+              onClick={() => setSettingsTab('users')}
+              className={`rounded-md px-4 py-2 text-sm ${settingsTab === 'users' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
+            >
+              User
+            </button>
+            <button
+              onClick={() => setSettingsTab('activity')}
+              className={`rounded-md px-4 py-2 text-sm ${settingsTab === 'activity' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
+            >
+              Activity
+            </button>
+          </div>
+        </CardContent>
+      </Card>
 
       {settingsTab === 'users' && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/20">
             <div>
               <CardTitle>User Settings</CardTitle>
               <CardDescription>Create, edit, and manage role/access for sales users.</CardDescription>
@@ -1109,107 +1169,111 @@ const AdminDashboard = () => {
               </DialogContent>
             </Dialog>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell className="font-medium">{entry.full_name || 'No name'}</TableCell>
-                    <TableCell className="text-muted-foreground">{entry.email}</TableCell>
-                    <TableCell>
-                      <Badge variant={entry.role === 'admin' ? 'default' : 'secondary'}>{entry.role || 'No role'}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {entry.is_active ? (
-                        <Badge variant="outline" className="border-green-500 text-green-600">
-                          <UserCheck className="mr-1 h-3 w-3" />
-                          Active
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="border-red-500 text-red-600">
-                          <UserX className="mr-1 h-3 w-3" />
-                          Inactive
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy')}</TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline" onClick={() => handleEditUser(entry)}>
-                          <Pencil className="mr-1 h-3 w-3" />
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-destructive/40 text-destructive"
-                          onClick={() => setDeleteConfirm({ userId: entry.id, email: entry.email })}
-                          disabled={entry.id === user?.id}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
+          <CardContent className="pt-5">
+            <div className="overflow-hidden rounded-xl border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {users.map((entry) => (
+                    <TableRow key={entry.id}>
+                      <TableCell className="font-medium">{entry.full_name || 'No name'}</TableCell>
+                      <TableCell className="text-muted-foreground">{entry.email}</TableCell>
+                      <TableCell>
+                        <Badge variant={entry.role === 'admin' ? 'default' : 'secondary'}>{entry.role || 'No role'}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {entry.is_active ? (
+                          <Badge variant="outline" className="border-green-500 text-green-600">
+                            <UserCheck className="mr-1 h-3 w-3" />
+                            Active
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-red-500 text-red-600">
+                            <UserX className="mr-1 h-3 w-3" />
+                            Inactive
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy')}</TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="outline" onClick={() => handleEditUser(entry)}>
+                            <Pencil className="mr-1 h-3 w-3" />
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-destructive/40 text-destructive"
+                            onClick={() => setDeleteConfirm({ userId: entry.id, email: entry.email })}
+                            disabled={entry.id === user?.id}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
 
       {settingsTab === 'activity' && (
-        <Card>
-          <CardHeader>
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="border-b bg-muted/20">
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5" />
               Activity Settings Log
             </CardTitle>
             <CardDescription>Audit activity feed across lead actions for admin visibility.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Activity</TableHead>
-                  <TableHead>Lead</TableHead>
-                  <TableHead>User</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {activities.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy h:mm a')}</TableCell>
-                    <TableCell>
-                      <p className="text-sm font-medium">{entry.title}</p>
-                      {entry.description && <p className="text-xs text-muted-foreground">{entry.description}</p>}
-                    </TableCell>
-                    <TableCell>{entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A'}</TableCell>
-                    <TableCell>
-                      {entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {activities.length === 0 && (
+          <CardContent className="pt-5">
+            <div className="overflow-hidden rounded-xl border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
-                      No activity logs yet.
-                    </TableCell>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Activity</TableHead>
+                    <TableHead>Lead</TableHead>
+                    <TableHead>User</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {activities.map((entry) => (
+                    <TableRow key={entry.id}>
+                      <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy h:mm a')}</TableCell>
+                      <TableCell>
+                        <p className="text-sm font-medium">{entry.title}</p>
+                        {entry.description && <p className="text-xs text-muted-foreground">{entry.description}</p>}
+                      </TableCell>
+                      <TableCell>{entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A'}</TableCell>
+                      <TableCell>
+                        {entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {activities.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
+                        No activity logs yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -1229,17 +1293,19 @@ const AdminDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b bg-card/95 backdrop-blur" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+    <div className="min-h-screen bg-muted/20">
+      <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="mx-auto flex max-w-7xl items-start justify-between gap-3 px-6 py-4">
           <div className="flex items-center gap-3 min-w-0">
-            <Shield className="h-8 w-8 text-primary" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+              <Shield className="h-6 w-6 text-primary" />
+            </div>
             <div className="min-w-0">
               <h1 className="truncate text-xl font-bold text-foreground">Admin Control Center</h1>
-              <p className="truncate text-sm text-muted-foreground">Web-first workspace for reports, leads, CRM sync, and settings</p>
+              <p className="truncate text-sm text-muted-foreground">Enterprise workspace for lead ops, call intelligence, CRM sync, and governance</p>
             </div>
           </div>
-          <Button variant="outline" onClick={handleSignOut}>
+          <Button variant="outline" onClick={handleSignOut} className="bg-card">
             <LogOut className="mr-2 h-4 w-4" />
             Sign Out
           </Button>
@@ -1247,7 +1313,14 @@ const AdminDashboard = () => {
       </header>
 
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-6 py-6 md:h-[calc(100vh-110px)] md:grid-cols-[250px_minmax(0,1fr)]">
-        <aside className="h-fit rounded-2xl border bg-card p-3 md:sticky md:top-24">
+        <aside className="h-fit rounded-2xl border bg-card p-3 shadow-sm md:sticky md:top-24">
+          <div className="mb-3 rounded-xl border bg-muted/20 px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Workspace</p>
+            <p className="text-sm font-medium text-foreground">Enterprise Admin</p>
+          </div>
+          <div className="mb-3 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Navigation
+          </div>
           <nav className="space-y-1">
             <button
               onClick={() => setActiveSection('leads')}
@@ -1280,7 +1353,7 @@ const AdminDashboard = () => {
           </nav>
         </aside>
 
-        <main className="min-w-0 md:overflow-y-auto md:pr-2">
+        <main className="min-w-0 md:overflow-y-auto md:pr-2 md:pb-2">
           {activeSection === 'leads' && renderLeads()}
           {activeSection === 'call-activity' && renderCallActivity()}
           {activeSection === 'marketplace' && renderMarketplace()}
