@@ -20,6 +20,67 @@ export interface AgentAction {
   executed?: boolean;
 }
 
+const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
+
+const sanitizeAgentAction = (action: AgentAction | undefined): AgentAction => {
+  if (!action) {
+    return { type: 'none', params: {} };
+  }
+
+  const params = action.params ?? {};
+
+  switch (action.type) {
+    case 'update_lead':
+      return isNonEmptyString(params.lead_id) && params.updates && typeof params.updates === 'object' && !Array.isArray(params.updates)
+        ? action
+        : { type: 'none', params: {} };
+    case 'call_lead':
+    case 'whatsapp_lead':
+      return isNonEmptyString(params.phone) ? action : { type: 'none', params: {} };
+    case 'email_lead':
+      return isNonEmptyString(params.email) ? action : { type: 'none', params: {} };
+    case 'add_activity':
+    case 'add_meeting':
+      return isNonEmptyString(params.lead_id) && isNonEmptyString(params.title) ? action : { type: 'none', params: {} };
+    case 'add_task':
+      return isNonEmptyString(params.lead_id) && isNonEmptyString(params.title) ? action : { type: 'none', params: {} };
+    case 'import_recordings':
+    case 'none':
+    default:
+      return action;
+  }
+};
+
+const normalizeAgentAction = (rawAction: unknown): AgentAction | undefined => {
+  if (!rawAction || typeof rawAction !== 'object') return undefined;
+
+  const candidate = rawAction as { type?: unknown; params?: unknown };
+  if (typeof candidate.type !== 'string') return undefined;
+
+  const allowedTypes: AgentActionType[] = [
+    'update_lead',
+    'call_lead',
+    'whatsapp_lead',
+    'email_lead',
+    'add_activity',
+    'add_task',
+    'add_meeting',
+    'import_recordings',
+    'none',
+  ];
+
+  const type = allowedTypes.includes(candidate.type as AgentActionType)
+    ? (candidate.type as AgentActionType)
+    : 'none';
+
+  const params =
+    candidate.params && typeof candidate.params === 'object' && !Array.isArray(candidate.params)
+      ? (candidate.params as Record<string, unknown>)
+      : {};
+
+  return { type, params };
+};
+
 export interface AgentMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -44,13 +105,52 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
   // Keep conversation history in a ref to avoid stale closure
   const historyRef = useRef<{ role: string; content: string }[]>([]);
 
+  const getFriendlyErrorDetails = (rawError: string) => {
+    const normalizedError = rawError.toLowerCase();
+
+    if (normalizedError.includes('openai_api_key') || normalizedError.includes('not configured')) {
+      return {
+        message: 'ARIA backend is missing its OpenAI key. Add OPENAI_API_KEY in Supabase Edge Function secrets.',
+        suggestions: ['Try again later', 'Check Edge Function secrets'],
+      };
+    }
+
+    if (normalizedError.includes('unauthorized') || normalizedError.includes('401')) {
+      return {
+        message: 'Authentication failed. Sign out and log back in before retrying ARIA.',
+        suggestions: ['Log in again', 'Try again'],
+      };
+    }
+
+    if (
+      normalizedError.includes('failed to send a request to the edge function') ||
+      normalizedError.includes('non-2xx status code') ||
+      normalizedError.includes('failed to fetch') ||
+      normalizedError.includes('network error') ||
+      normalizedError.includes('fetch') ||
+      normalizedError.includes('functions/v1/ai-agent')
+    ) {
+      return {
+        message: 'ARIA backend is unreachable right now. Check that the ai-agent Edge Function is deployed and that your internet connection is working.',
+        suggestions: ['Try again', 'Check Edge Functions in Supabase'],
+      };
+    }
+
+    return {
+      message: `Error: ${rawError.slice(0, 120)}`,
+      suggestions: ['Try again', 'Check browser console'],
+    };
+  };
+
   const executeAction = useCallback(
     async (action: AgentAction) => {
       if (!action || action.type === 'none') return;
 
+      const safeParams = (action.params ?? {}) as Record<string, unknown>;
+
       switch (action.type) {
         case 'update_lead': {
-          const { lead_id, updates } = action.params as {
+          const { lead_id, updates } = safeParams as {
             lead_id: string;
             updates: Record<string, unknown>;
           };
@@ -62,7 +162,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         }
 
         case 'call_lead': {
-          const { phone, lead_name, lead_id } = action.params as {
+          const { phone, lead_name, lead_id } = safeParams as {
             phone: string;
             lead_name: string;
             lead_id: string;
@@ -72,7 +172,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         }
 
         case 'whatsapp_lead': {
-          const { phone, lead_name, lead_id } = action.params as {
+          const { phone, lead_name, lead_id } = safeParams as {
             phone: string;
             lead_name: string;
             lead_id: string;
@@ -82,14 +182,14 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         }
 
         case 'email_lead': {
-          const { email } = action.params as { email: string };
+          const { email } = safeParams as { email: string };
           if (email) window.location.href = `mailto:${email}`;
           break;
         }
 
         case 'add_activity':
         case 'add_meeting': {
-          const { lead_id, type, title, description } = action.params as {
+          const { lead_id, type, title, description } = safeParams as {
             lead_id: string;
             type: string;
             title: string;
@@ -110,7 +210,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         }
 
         case 'add_task': {
-          const { lead_id, title, description, due_date } = action.params as {
+          const { lead_id, title, description, due_date } = safeParams as {
             lead_id: string;
             title: string;
             description?: string;
@@ -203,7 +303,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
           actionType: data?.action?.type,
         });
 
-        const action = data.action as AgentAction | undefined;
+        const action = sanitizeAgentAction(normalizeAgentAction(data.action));
 
         // Execute side-effect actions
         if (action && action.type !== 'none') {
@@ -229,21 +329,13 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         const fullError = err instanceof Error ? err.message : String(err);
         console.error('🔴 AI agent error:', fullError);
         console.error('Full error object:', err);
-
-        const errorDetails =
-          fullError.includes('OPENAI_API_KEY') || fullError.includes('not configured')
-            ? 'Missing OpenAI API key. Add OPENAI_API_KEY to Supabase Dashboard → Edge Functions → Secrets.'
-            : fullError.includes('Unauthorized') || fullError.includes('401')
-              ? 'Authentication failed. Check your login.'
-              : fullError.includes('fetch')
-                ? 'Network error. Check your internet connection.'
-                : `Error: ${fullError.slice(0, 80)}`;
+        const friendlyError = getFriendlyErrorDetails(fullError);
 
         const errorMsg: AgentMessage = {
           id: loadingId,
           role: 'assistant',
-          content: `⚠️ ${errorDetails}`,
-          suggestions: ['Try again', 'Check logs in browser console'],
+          content: `⚠️ ${friendlyError.message}`,
+          suggestions: friendlyError.suggestions,
           timestamp: new Date(),
         };
         setMessages((prev) =>

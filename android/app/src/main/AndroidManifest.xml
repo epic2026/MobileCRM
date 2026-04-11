@@ -4,10 +4,11 @@
     <!-- 🌐 Network -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- 📞 Call log permission -->
+    <!-- 📞 Call log & Audio permissions -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:allowBackup="true"

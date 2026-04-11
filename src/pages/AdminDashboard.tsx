@@ -62,7 +62,15 @@ import {
   Activity,
   GripVertical,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import {
+  differenceInCalendarDays,
+  endOfDay,
+  format,
+  isAfter,
+  isBefore,
+  startOfDay,
+  subDays,
+} from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
 import type { Database } from '@/integrations/supabase/types';
@@ -72,6 +80,9 @@ type SettingsTab = 'users' | 'activity';
 type LeadStatus = Database['public']['Enums']['lead_status'];
 type Lead = Database['public']['Tables']['leads']['Row'];
 type LeadActivity = Database['public']['Tables']['lead_activities']['Row'];
+type CallLog = Database['public']['Tables']['call_logs']['Row'];
+type LeadTask = Database['public']['Tables']['lead_tasks']['Row'];
+type ReportRow = Record<string, string | number>;
 
 interface Profile {
   id: string;
@@ -96,7 +107,19 @@ type ReportBuilderState = {
   dateRange: '7d' | '30d' | '90d' | 'custom';
   ownerId: string;
   format: 'table' | 'summary';
+  customStartDate: string;
+  customEndDate: string;
 };
+
+interface ReportPreview {
+  title: string;
+  description: string;
+  summaryCards: Array<{ label: string; value: string; hint: string }>;
+  insights: string[];
+  columns: string[];
+  rows: ReportRow[];
+  filename: string;
+}
 
 type MarketplaceApp = {
   id: string;
@@ -195,6 +218,8 @@ const AdminDashboard = () => {
     dateRange: '30d',
     ownerId: 'all',
     format: 'summary',
+    customStartDate: format(subDays(new Date(), 29), 'yyyy-MM-dd'),
+    customEndDate: format(new Date(), 'yyyy-MM-dd'),
   });
 
   const [marketplaceApps, setMarketplaceApps] = useState<MarketplaceApp[]>(defaultMarketplaceApps);
@@ -276,6 +301,34 @@ const AdminDashboard = () => {
     enabled: role === 'admin',
   });
 
+  const { data: callLogs = [] } = useQuery({
+    queryKey: ['admin-call-logs'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('call_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      return data as CallLog[];
+    },
+    enabled: role === 'admin',
+  });
+
+  const { data: leadTasks = [] } = useQuery({
+    queryKey: ['admin-lead-tasks'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('lead_tasks')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      return data as LeadTask[];
+    },
+    enabled: role === 'admin',
+  });
+
   const { data: reportStats } = useQuery({
     queryKey: ['admin-report-stats'],
     queryFn: async () => {
@@ -301,6 +354,235 @@ const AdminDashboard = () => {
 
   const leadMap = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads]);
   const userMap = useMemo(() => new Map(users.map((entry) => [entry.id, entry])), [users]);
+  const selectedOwner = reportBuilder.ownerId === 'all' ? null : userMap.get(reportBuilder.ownerId);
+
+  const reportDateWindow = useMemo(() => {
+    const today = new Date();
+    const fallback = {
+      start: startOfDay(subDays(today, 29)),
+      end: endOfDay(today),
+      label: 'Last 30 days',
+      hasInvalidCustomRange: false,
+    };
+
+    if (reportBuilder.dateRange === 'custom') {
+      if (!reportBuilder.customStartDate || !reportBuilder.customEndDate) {
+        return { ...fallback, label: 'Custom range', hasInvalidCustomRange: true };
+      }
+
+      const start = startOfDay(new Date(reportBuilder.customStartDate));
+      const end = endOfDay(new Date(reportBuilder.customEndDate));
+
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || isAfter(start, end)) {
+        return { ...fallback, label: 'Custom range', hasInvalidCustomRange: true };
+      }
+
+      return {
+        start,
+        end,
+        label: `${format(start, 'dd MMM yyyy')} - ${format(end, 'dd MMM yyyy')}`,
+        hasInvalidCustomRange: false,
+      };
+    }
+
+    const days = reportBuilder.dateRange === '7d' ? 6 : reportBuilder.dateRange === '90d' ? 89 : 29;
+    return {
+      start: startOfDay(subDays(today, days)),
+      end: endOfDay(today),
+      label: reportBuilder.dateRange === '7d' ? 'Last 7 days' : reportBuilder.dateRange === '90d' ? 'Last 90 days' : 'Last 30 days',
+      hasInvalidCustomRange: false,
+    };
+  }, [reportBuilder.customEndDate, reportBuilder.customStartDate, reportBuilder.dateRange]);
+
+  const reportPreview = useMemo<ReportPreview>(() => {
+    const isWithinRange = (value: string | null | undefined) => {
+      if (!value) return false;
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return false;
+      return !isBefore(date, reportDateWindow.start) && !isAfter(date, reportDateWindow.end);
+    };
+
+    const ownerMatches = (userId: string | null) =>
+      reportBuilder.ownerId === 'all' || (!!userId && userId === reportBuilder.ownerId);
+
+    const filteredLeads = leads.filter((lead) => ownerMatches(lead.user_id) && isWithinRange(lead.created_at));
+    const filteredActivities = activities.filter((activity) => isWithinRange(activity.created_at) && ownerMatches(activity.user_id));
+    const filteredCalls = callLogs.filter((call) => isWithinRange(call.created_at) && ownerMatches(call.user_id));
+    const filteredTasks = leadTasks.filter((task) => isWithinRange(task.created_at) && ownerMatches(task.user_id));
+
+    const wonLeads = filteredLeads.filter((lead) => lead.status === 'won');
+    const lostLeads = filteredLeads.filter((lead) => lead.status === 'lost');
+    const openLeads = filteredLeads.filter((lead) => !['won', 'lost'].includes(lead.status));
+    const staleLeads = openLeads.filter((lead) => differenceInCalendarDays(new Date(), new Date(lead.updated_at)) >= 5);
+    const overdueTasks = filteredTasks.filter(
+      (task) => task.status !== 'completed' && task.due_date && isBefore(new Date(task.due_date), new Date()),
+    );
+    const totalPipelineValue = filteredLeads.reduce((sum, lead) => sum + (lead.value ?? 0), 0);
+    const averageCallDurationSeconds = filteredCalls.length
+      ? Math.round(filteredCalls.reduce((sum, call) => sum + (call.duration ?? 0), 0) / filteredCalls.length)
+      : 0;
+    const scopeLabel = selectedOwner?.full_name || selectedOwner?.email || 'All users';
+
+    const ownerRows = salesUsers
+      .map((salesUser) => {
+        const ownerLeads = filteredLeads.filter((lead) => lead.user_id === salesUser.id);
+        const ownerCalls = filteredCalls.filter((call) => call.user_id === salesUser.id);
+        const ownerTasks = filteredTasks.filter((task) => task.user_id === salesUser.id);
+        const ownerWins = ownerLeads.filter((lead) => lead.status === 'won').length;
+
+        return {
+          Owner: salesUser.full_name || salesUser.email,
+          Leads: ownerLeads.length,
+          'Pipeline Value': `Rs ${ownerLeads.reduce((sum, lead) => sum + (lead.value ?? 0), 0).toLocaleString('en-IN')}`,
+          Calls: ownerCalls.length,
+          'Tasks Created': ownerTasks.length,
+          Wins: ownerWins,
+          'Conversion Rate': ownerLeads.length ? `${Math.round((ownerWins / ownerLeads.length) * 100)}%` : '0%',
+        };
+      })
+      .filter((row) => reportBuilder.ownerId === 'all' || row.Owner === scopeLabel);
+
+    if (reportBuilder.reportType === 'activity') {
+      const completedTasks = filteredTasks.filter((task) => task.status === 'completed').length;
+      return {
+        title: 'Sales Activity Report',
+        description: `${scopeLabel} · ${reportDateWindow.label}`,
+        summaryCards: [
+          { label: 'Calls Logged', value: String(filteredCalls.length), hint: `${averageCallDurationSeconds}s avg duration` },
+          { label: 'Activities Logged', value: String(filteredActivities.length), hint: 'Calls, notes, meetings, emails' },
+          { label: 'Tasks Created', value: String(filteredTasks.length), hint: `${completedTasks} completed` },
+          { label: 'Overdue Tasks', value: String(overdueTasks.length), hint: overdueTasks.length ? 'Needs attention' : 'No overdue work' },
+        ],
+        insights: [
+          filteredCalls.length
+            ? `Call volume is ${filteredCalls.length} with an average duration of ${averageCallDurationSeconds} seconds.`
+            : 'No calls were logged in this report window.',
+          filteredActivities.length
+            ? `${filteredActivities.filter((activity) => activity.type === 'meeting').length} meetings and ${filteredActivities.filter((activity) => activity.type === 'call').length} call activities were captured.`
+            : 'The team is not logging much activity yet in this range.',
+          overdueTasks.length
+            ? `${overdueTasks.length} tasks are overdue and should be reviewed today.`
+            : 'Task execution is on track with no overdue items.',
+        ],
+        columns: ['Activity', 'Lead', 'Owner', 'Type', 'Created'],
+        rows: filteredActivities.slice(0, 50).map((activity) => ({
+          Activity: activity.title,
+          Lead: leadMap.get(activity.lead_id)?.name || 'Unknown lead',
+          Owner: userMap.get(activity.user_id || '')?.full_name || userMap.get(activity.user_id || '')?.email || 'System',
+          Type: activity.type,
+          Created: format(new Date(activity.created_at), 'dd MMM yyyy, h:mm a'),
+        })),
+        filename: 'sales-activity-report',
+      };
+    }
+
+    if (reportBuilder.reportType === 'conversion') {
+      const conversionRateValue = filteredLeads.length ? Math.round((wonLeads.length / filteredLeads.length) * 100) : 0;
+      return {
+        title: 'Conversion Analysis',
+        description: `${scopeLabel} · ${reportDateWindow.label}`,
+        summaryCards: [
+          { label: 'Leads Created', value: String(filteredLeads.length), hint: `${wonLeads.length} won, ${lostLeads.length} lost` },
+          { label: 'Conversion Rate', value: `${conversionRateValue}%`, hint: 'Won vs created leads' },
+          { label: 'Revenue Won', value: `Rs ${wonLeads.reduce((sum, lead) => sum + (lead.value ?? 0), 0).toLocaleString('en-IN')}`, hint: 'Value from won leads' },
+          { label: 'Stale Opportunities', value: String(staleLeads.length), hint: 'Open leads untouched for 5+ days' },
+        ],
+        insights: [
+          conversionRateValue
+            ? `${conversionRateValue}% of created leads converted to won in this window.`
+            : 'No wins yet in this range, so qualification and follow-up speed need attention.',
+          staleLeads.length
+            ? `${staleLeads.length} open leads are stale and should be re-engaged first.`
+            : 'Open opportunities are fresh with no stale leads over five days.',
+          lostLeads.length
+            ? `${lostLeads.length} leads moved to lost and should be reviewed for objection patterns.`
+            : 'No losses were recorded in this slice.',
+        ],
+        columns: ['Lead', 'Owner', 'Status', 'Value', 'Updated'],
+        rows: filteredLeads.slice(0, 50).map((lead) => ({
+          Lead: lead.name,
+          Owner: userMap.get(lead.user_id || '')?.full_name || userMap.get(lead.user_id || '')?.email || 'Unassigned',
+          Status: statusLabels[lead.status],
+          Value: `Rs ${(lead.value ?? 0).toLocaleString('en-IN')}`,
+          Updated: format(new Date(lead.updated_at), 'dd MMM yyyy'),
+        })),
+        filename: 'conversion-analysis-report',
+      };
+    }
+
+    if (reportBuilder.reportType === 'owner-performance') {
+      return {
+        title: 'Owner Performance Report',
+        description: `${scopeLabel} · ${reportDateWindow.label}`,
+        summaryCards: [
+          { label: 'Owners Included', value: String(reportBuilder.ownerId === 'all' ? ownerRows.length : 1), hint: 'Active sales users in scope' },
+          { label: 'Assigned Leads', value: String(filteredLeads.length), hint: 'Created in selected range' },
+          { label: 'Calls Logged', value: String(filteredCalls.length), hint: 'Owner-linked calls' },
+          { label: 'Pipeline Value', value: `Rs ${totalPipelineValue.toLocaleString('en-IN')}`, hint: 'Combined opportunity value' },
+        ],
+        insights: [
+          ownerRows.length
+            ? `Top calling owner: ${[...ownerRows].sort((a, b) => Number(b.Calls) - Number(a.Calls))[0].Owner}.`
+            : 'No owner performance data is available in this window.',
+          ownerRows.length
+            ? `Highest pipeline owner: ${[...ownerRows].sort((a, b) => Number(String(b['Pipeline Value']).replace(/[^0-9]/g, '')) - Number(String(a['Pipeline Value']).replace(/[^0-9]/g, '')))[0].Owner}.`
+            : 'Pipeline is empty for the selected owner scope.',
+          overdueTasks.length
+            ? `${overdueTasks.length} overdue tasks are currently slowing owner execution.`
+            : 'No overdue tasks are blocking the sales team right now.',
+        ],
+        columns: ['Owner', 'Leads', 'Pipeline Value', 'Calls', 'Tasks Created', 'Wins', 'Conversion Rate'],
+        rows: ownerRows,
+        filename: 'owner-performance-report',
+      };
+    }
+
+    return {
+      title: 'Pipeline Health Report',
+      description: `${scopeLabel} · ${reportDateWindow.label}`,
+      summaryCards: [
+        { label: 'Open Leads', value: String(openLeads.length), hint: `${wonLeads.length} won, ${lostLeads.length} lost` },
+        { label: 'Pipeline Value', value: `Rs ${totalPipelineValue.toLocaleString('en-IN')}`, hint: 'Total opportunity value' },
+        { label: 'Stale Leads', value: String(staleLeads.length), hint: staleLeads.length ? 'Follow up now' : 'Fresh pipeline' },
+        { label: 'Tasks Due', value: String(filteredTasks.filter((task) => task.status !== 'completed').length), hint: `${overdueTasks.length} overdue` },
+      ],
+      insights: [
+        openLeads.length
+          ? `${openLeads.length} leads are actively moving through the pipeline in this window.`
+          : 'No open leads were created in the selected window.',
+        staleLeads.length
+          ? `${staleLeads.length} opportunities have been untouched for at least five days and need fast follow-up.`
+          : 'Lead follow-up freshness looks healthy in this range.',
+        filteredCalls.length
+          ? `${filteredCalls.length} calls were logged against this pipeline slice.`
+          : 'Pipeline activity is not yet backed by call logs in this window.',
+      ],
+      columns: ['Stage', 'Leads', 'Value'],
+      rows: statusOrder.map((status) => {
+        const stageLeads = filteredLeads.filter((lead) => lead.status === status);
+        return {
+          Stage: statusLabels[status],
+          Leads: stageLeads.length,
+          Value: `Rs ${stageLeads.reduce((sum, lead) => sum + (lead.value ?? 0), 0).toLocaleString('en-IN')}`,
+        };
+      }),
+      filename: 'pipeline-health-report',
+    };
+  }, [
+    activities,
+    callLogs,
+    leadMap,
+    leadTasks,
+    leads,
+    reportBuilder.ownerId,
+    reportBuilder.reportType,
+    reportDateWindow.end,
+    reportDateWindow.label,
+    reportDateWindow.start,
+    salesUsers,
+    selectedOwner,
+    userMap,
+  ]);
 
   const conversionRate = reportStats?.totalLeads
     ? Math.round((reportStats.convertedLeads / reportStats.totalLeads) * 100)
@@ -444,14 +726,42 @@ const AdminDashboard = () => {
   };
 
   const handleGenerateReport = () => {
-    const ownerLabel =
-      reportBuilder.ownerId === 'all'
-        ? 'all users'
-        : salesUsers.find((entry) => entry.id === reportBuilder.ownerId)?.full_name || 'selected user';
+    toast({
+      title: reportPreview.title,
+      description: `Showing ${reportPreview.rows.length} rows for ${reportPreview.description}.`,
+    });
+  };
+
+  const handleExportReport = () => {
+    if (!reportPreview.rows.length) {
+      toast({
+        title: 'Nothing to export',
+        description: 'Adjust the filters or date range to generate report rows first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const csvRows = [
+      reportPreview.columns.join(','),
+      ...reportPreview.rows.map((row) =>
+        reportPreview.columns
+          .map((column) => `"${String(row[column] ?? '').replace(/"/g, '""')}"`)
+          .join(','),
+      ),
+    ];
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${reportPreview.filename}-${format(new Date(), 'yyyyMMdd-HHmm')}.csv`;
+    link.click();
+    window.URL.revokeObjectURL(url);
 
     toast({
-      title: 'Report generated',
-      description: `Prepared ${reportBuilder.reportType} in ${reportBuilder.format} format for ${ownerLabel}.`,
+      title: 'CSV exported',
+      description: `${reportPreview.title} downloaded successfully.`,
     });
   };
 
@@ -498,10 +808,10 @@ const AdminDashboard = () => {
             <BarChart3 className="h-5 w-5" />
             Dashboard & Reports Builder
           </CardTitle>
-          <CardDescription>Create a report configuration for pipeline, activity, conversion, or owner performance.</CardDescription>
+          <CardDescription>Create live reports for pipeline, activity, conversion, or owner performance.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className={`grid gap-4 md:grid-cols-2 ${reportBuilder.dateRange === 'custom' ? 'xl:grid-cols-6' : 'xl:grid-cols-4'}`}>
             <div className="space-y-2">
               <Label>Report Type</Label>
               <Select
@@ -541,6 +851,32 @@ const AdminDashboard = () => {
                 </SelectContent>
               </Select>
             </div>
+
+            {reportBuilder.dateRange === 'custom' && (
+              <>
+                <div className="space-y-2">
+                  <Label>Start Date</Label>
+                  <Input
+                    type="date"
+                    value={reportBuilder.customStartDate}
+                    onChange={(event) =>
+                      setReportBuilder((prev) => ({ ...prev, customStartDate: event.target.value }))
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>End Date</Label>
+                  <Input
+                    type="date"
+                    value={reportBuilder.customEndDate}
+                    onChange={(event) =>
+                      setReportBuilder((prev) => ({ ...prev, customEndDate: event.target.value }))
+                    }
+                  />
+                </div>
+              </>
+            )}
 
             <div className="space-y-2">
               <Label>Owner Scope</Label>
@@ -582,7 +918,12 @@ const AdminDashboard = () => {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Button onClick={handleGenerateReport}>Generate Report</Button>
+            <Button onClick={handleGenerateReport} disabled={reportDateWindow.hasInvalidCustomRange}>
+              Generate Report
+            </Button>
+            <Button variant="secondary" onClick={handleExportReport} disabled={!reportPreview.rows.length || reportDateWindow.hasInvalidCustomRange}>
+              Export CSV
+            </Button>
             <Button
               variant="outline"
               onClick={() =>
@@ -591,11 +932,116 @@ const AdminDashboard = () => {
                   dateRange: '30d',
                   ownerId: 'all',
                   format: 'summary',
+                  customStartDate: format(subDays(new Date(), 29), 'yyyy-MM-dd'),
+                  customEndDate: format(new Date(), 'yyyy-MM-dd'),
                 })
               }
             >
               Reset Builder
             </Button>
+          </div>
+
+          {reportDateWindow.hasInvalidCustomRange && (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              Choose a valid custom date range before generating the report.
+            </div>
+          )}
+
+          <div className="space-y-5 rounded-2xl border bg-muted/20 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">{reportPreview.title}</h3>
+                <p className="text-sm text-muted-foreground">{reportPreview.description}</p>
+              </div>
+              <Badge variant="secondary">
+                {reportBuilder.format === 'summary' ? 'Executive Summary' : 'Detailed Table'}
+              </Badge>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {reportPreview.summaryCards.map((card) => (
+                <div key={card.label} className="rounded-xl border bg-background p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{card.label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{card.value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{card.hint}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">AI-style Summary</CardTitle>
+                  <CardDescription>Quick leadership-ready insights from the selected dataset.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {reportPreview.insights.map((insight) => (
+                    <div key={insight} className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-foreground">
+                      {insight}
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Report Scope</CardTitle>
+                  <CardDescription>Current filters driving this report.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm text-muted-foreground">
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Type</span>
+                    <span className="font-medium capitalize text-foreground">{reportBuilder.reportType.replace('-', ' ')}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Date window</span>
+                    <span className="font-medium text-foreground">{reportDateWindow.label}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Owner</span>
+                    <span className="font-medium text-foreground">{selectedOwner?.full_name || selectedOwner?.email || 'All users'}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Rows available</span>
+                    <span className="font-medium text-foreground">{reportPreview.rows.length}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {(reportBuilder.format === 'table' || reportPreview.rows.length > 0) && (
+              <div className="overflow-hidden rounded-xl border bg-background">
+                <div className="border-b px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">Detailed report table</p>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {reportPreview.columns.map((column) => (
+                        <TableHead key={column}>{column}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportPreview.rows.length > 0 ? (
+                      reportPreview.rows.map((row, index) => (
+                        <TableRow key={`${reportPreview.filename}-${index}`}>
+                          {reportPreview.columns.map((column) => (
+                            <TableCell key={column}>{String(row[column] ?? '-')}</TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={reportPreview.columns.length} className="text-center text-muted-foreground">
+                          No rows match this report configuration yet.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

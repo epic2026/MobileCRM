@@ -3,12 +3,30 @@ import { X, Send, Sparkles, Zap, CheckCircle2, Mic, MicOff, AlertCircle } from '
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAIAgent, AgentActionType } from '@/hooks/useAIAgent';
 import { cn } from '@/lib/utils';
+import { isNativeApp, MicrophonePermissionPlugin } from '@/services/nativePlugins';
+
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult: ((event: { resultIndex: number; results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
+interface SpeechRecognitionConstructor {
+  new (): SpeechRecognitionInstance;
+}
 
 // TypeScript declaration for speech recognition
 declare global {
   interface Window {
-    webkitSpeechRecognition?: typeof SpeechRecognition;
-    SpeechRecognition?: typeof SpeechRecognition;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    SpeechRecognition?: SpeechRecognitionConstructor;
   }
 }
 
@@ -66,12 +84,22 @@ const AIAgentSheet = ({
   const messagesBottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const voiceDraftRef = useRef('');
+  const voiceBaseInputRef = useRef('');
+  const shouldAutoSendVoiceRef = useRef(false);
 
   const { messages, isLoading, sendMessage, clearConversation } = useAIAgent({
     onCall,
     onWhatsApp,
     onImportRecordings,
   });
+  const sendMessageRef = useRef(sendMessage);
+  const isLoadingRef = useRef(isLoading);
+
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+    isLoadingRef.current = isLoading;
+  }, [isLoading, sendMessage]);
 
   // Scroll to newest message
   useEffect(() => {
@@ -102,25 +130,32 @@ const AIAgentSheet = ({
     recognition.onstart = () => {
       setIsListening(true);
       setVoiceError('');
+      voiceDraftRef.current = '';
     };
 
     recognition.onresult = (event) => {
       let interimTranscript = '';
+      let finalTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          setInputText((prev) => prev + transcript);
+          finalTranscript += transcript;
         } else {
           interimTranscript += transcript;
         }
       }
-      // Show live transcription in input
-      if (interimTranscript) {
-        inputRef.current?.focus();
-      }
+      voiceDraftRef.current = `${voiceDraftRef.current} ${finalTranscript}`.trim();
+      const combinedTranscript = [voiceDraftRef.current, interimTranscript.trim()].filter(Boolean).join(' ').trim();
+      const nextValue = [voiceBaseInputRef.current.trim(), combinedTranscript].filter(Boolean).join(' ').trim();
+      setInputText(nextValue);
+      inputRef.current?.focus();
     };
 
     recognition.onerror = (event) => {
+      if (event.error === 'aborted') {
+        setIsListening(false);
+        return;
+      }
       const errorMsg =
         event.error === 'no-speech'
           ? 'No speech detected. Try again.'
@@ -131,10 +166,22 @@ const AIAgentSheet = ({
               : `Voice error: ${event.error}`;
       setVoiceError(errorMsg);
       setIsListening(false);
+      shouldAutoSendVoiceRef.current = false;
     };
 
     recognition.onend = () => {
       setIsListening(false);
+      const spokenText = [voiceBaseInputRef.current.trim(), voiceDraftRef.current.trim()].filter(Boolean).join(' ').trim();
+      setInputText(spokenText);
+
+      if (shouldAutoSendVoiceRef.current && spokenText && !isLoadingRef.current) {
+        sendMessageRef.current(spokenText);
+        setInputText('');
+      }
+
+      shouldAutoSendVoiceRef.current = false;
+      voiceDraftRef.current = '';
+      voiceBaseInputRef.current = '';
     };
 
     recognitionRef.current = recognition;
@@ -146,26 +193,86 @@ const AIAgentSheet = ({
     };
   }, []);
 
-  const handleVoiceStart = () => {
+  const handleVoiceStart = async () => {
     if (!recognitionRef.current) {
       setVoiceError('Speech recognition not available on your device.');
       return;
     }
+
+    if (isNativeApp()) {
+      try {
+        const permission = await MicrophonePermissionPlugin.checkMicrophonePermission();
+        if (permission.microphone !== 'granted') {
+          const requested = await MicrophonePermissionPlugin.requestMicrophonePermission();
+          if (requested.microphone !== 'granted') {
+            setVoiceError('Microphone permission denied. Enable it in Android app settings.');
+            try {
+              await MicrophonePermissionPlugin.openAppSettings();
+            } catch (settingsError) {
+              console.warn('⚠️ Could not open app settings:', settingsError);
+            }
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('🔴 Native microphone permission check failed:', error);
+        setVoiceError('Unable to verify microphone permission on this device.');
+        return;
+      }
+    }
+
+    if (!isNativeApp()) {
+      // Browser speech recognition usually needs a quick getUserMedia preflight.
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        console.error('🔴 Microphone access failed:', error);
+        if (error.toLowerCase().includes('permission')) {
+          setVoiceError('Microphone permission denied. Enable in browser/app settings.');
+        } else if (error.toLowerCase().includes('notfound')) {
+          setVoiceError('No microphone device found.');
+        } else {
+          setVoiceError(`Microphone error: ${error.slice(0, 60)}`);
+        }
+        return;
+      }
+    }
+
     setVoiceError('');
-    recognitionRef.current.start();
+    voiceBaseInputRef.current = inputText.trim();
+    voiceDraftRef.current = '';
+    shouldAutoSendVoiceRef.current = true;
+
+    try {
+      recognitionRef.current.start();
+    } catch (error) {
+      shouldAutoSendVoiceRef.current = false;
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.toLowerCase().includes('already started')) {
+        setVoiceError('Voice capture is already running.');
+      } else {
+        setVoiceError('Unable to start voice capture on this device.');
+      }
+    }
   };
 
   const handleVoiceStop = () => {
     if (recognitionRef.current) {
+      shouldAutoSendVoiceRef.current = true;
       recognitionRef.current.stop();
     }
   };
 
-  const handleSend = () => {
-    const text = inputText.trim();
+  const handleSend = (overrideText?: string) => {
+    const text = (overrideText ?? inputText).trim();
     if (!text || isLoading) return;
     sendMessage(text);
     setInputText('');
+    voiceDraftRef.current = '';
+    voiceBaseInputRef.current = '';
+    shouldAutoSendVoiceRef.current = false;
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

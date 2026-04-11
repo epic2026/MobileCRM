@@ -1,9 +1,45 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
+import { createClient } from "npm:@supabase/supabase-js@2.50.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const isNonEmptyString = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
+
+const sanitizeAction = (rawAction: unknown) => {
+  const fallback = { type: "none", params: {} as Record<string, unknown> };
+
+  if (!rawAction || typeof rawAction !== "object") return fallback;
+
+  const candidate = rawAction as { type?: unknown; params?: unknown };
+  const type = typeof candidate.type === "string" ? candidate.type : "none";
+  const params =
+    candidate.params && typeof candidate.params === "object" && !Array.isArray(candidate.params)
+      ? (candidate.params as Record<string, unknown>)
+      : {};
+
+  switch (type) {
+    case "update_lead":
+      return isNonEmptyString(params.lead_id) && params.updates && typeof params.updates === "object" && !Array.isArray(params.updates)
+        ? { type, params }
+        : fallback;
+    case "call_lead":
+    case "whatsapp_lead":
+      return isNonEmptyString(params.phone) ? { type, params } : fallback;
+    case "email_lead":
+      return isNonEmptyString(params.email) ? { type, params } : fallback;
+    case "add_activity":
+    case "add_meeting":
+    case "add_task":
+      return isNonEmptyString(params.lead_id) && isNonEmptyString(params.title) ? { type, params } : fallback;
+    case "import_recordings":
+    case "none":
+      return { type, params };
+    default:
+      return fallback;
+  }
 };
 
 const CRM_ACTION_TOOL = {
@@ -175,7 +211,7 @@ ${activityLines || "No recent activity."}
 3. Only use IDs from the leads list above. Never invent or guess IDs.
 4. If you cannot find a matching lead, set action.type="none" and politely ask for clarification.
 5. Keep messages short and conversational (1-2 sentences). Use emoji where helpful.
-6. For insights/overview/digest requests: summarize pipeline stats, flag stale leads (no activity in 5+ days based on updated_at), list upcoming tasks, give win recommendations. Use action.type="none".
+6. For insights/overview/digest/score/analytics requests: summarize pipeline stats, flag stale leads (no activity in 5+ days based on updated_at), list upcoming tasks, give win recommendations. Use action.type="none".
 7. Provide 2-3 relevant, actionable suggestion chips.
 8. Indian context awareness: understand Hindi/Hinglish intent, Indian name patterns, ₹ currency.
 
@@ -248,7 +284,7 @@ ACTION PARAMS FORMAT:
 
     // Ensure safe defaults
     if (!result.message) result.message = "Done!";
-    if (!result.action) result.action = { type: "none", params: {} };
+    result.action = sanitizeAction(result.action);
     if (!Array.isArray(result.suggestions)) result.suggestions = [];
 
     return new Response(JSON.stringify(result), {

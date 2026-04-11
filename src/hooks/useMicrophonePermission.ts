@@ -1,73 +1,87 @@
 import { useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { isNativeApp, MicrophonePermissionPlugin } from '@/services/nativePlugins';
 
-/**
- * Request microphone permission at app startup for voice input.
- * Only requests once per app session.
- */
 export const useMicrophonePermission = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    const requestPermission = async () => {
-      // Skip if browser doesn't support permissions API
-      if (!navigator.permissions || !navigator.mediaDevices) {
-        console.log('Permissions API or Media Devices API not available');
-        return;
-      }
-
+    const requestMicrophonePermission = async () => {
       try {
-        // Check if microphone permission is already granted
-        const result = await navigator.permissions.query({ name: 'microphone' });
-        console.log('Microphone permission status:', result.state);
+        if (isNativeApp()) {
+          const nativeStatus = await MicrophonePermissionPlugin.checkMicrophonePermission();
 
-        if (result.state === 'granted') {
-          console.log('✅ Microphone already permitted');
+          if (nativeStatus.microphone !== 'granted') {
+            const nativeRequest = await MicrophonePermissionPlugin.requestMicrophonePermission();
+
+            if (nativeRequest.microphone !== 'granted') {
+              toast({
+                title: 'Microphone Access Denied',
+                description: 'Enable microphone permission in Android app settings to use ARIA voice commands.',
+                variant: 'destructive',
+              });
+              try {
+                await MicrophonePermissionPlugin.openAppSettings();
+              } catch (settingsError) {
+                console.warn('⚠️ Could not open app settings:', settingsError);
+              }
+              return;
+            }
+          }
+
+          console.log('✅ Native microphone permission granted');
           return;
         }
 
-        if (result.state === 'denied') {
-          console.warn('⚠️ Microphone permission denied. User must enable it in settings.');
-          toast({
-            title: 'Microphone Access Required',
-            description: 'Enable microphone in settings to use voice commands with ARIA.',
-            variant: 'destructive',
-          });
-          return;
+        // Check if we have the Permissions API available
+        if (navigator.permissions && navigator.permissions.query) {
+          try {
+            const result = await navigator.permissions.query({ name: 'microphone' });
+            console.log('🎤 Microphone permission status:', result.state);
+
+            if (result.state === 'denied') {
+              toast({
+                title: 'Microphone Access Denied',
+                description: 'Please enable microphone permission in your device settings to use voice commands.',
+                variant: 'destructive',
+              });
+            } else if (result.state === 'prompt') {
+              // Permission is yet to be prompted, this is good
+              console.log('🎤 Microphone permission will be prompted on first use');
+            } else if (result.state === 'granted') {
+              console.log('✅ Microphone permission already granted');
+            }
+
+            // Listen for permission changes
+            result.addEventListener('change', () => {
+              console.log('🎤 Microphone permission status changed:', result.state);
+              if (result.state === 'denied') {
+                toast({
+                  title: 'Microphone Access Denied',
+                  description: 'Microphone permission was revoked. Please enable it in settings.',
+                  variant: 'destructive',
+                });
+              }
+            });
+          } catch (error) {
+            console.warn('⚠️ Permissions API query failed:', error);
+          }
+        } else {
+          console.warn('⚠️ Permissions API not available');
         }
 
-        // State is 'prompt' - request permission
-        if (result.state === 'prompt') {
-          console.log('📍 Requesting microphone permission...');
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          stream.getTracks().forEach((track) => track.stop());
-          console.log('✅ Microphone permission granted');
-          toast({
-            title: 'Microphone Enabled',
-            description: 'You can now use voice commands with ARIA.',
-          });
+        // For browsers/Capacitor that support getUserMedia, we don't need to explicitly request
+        // The permission will be requested when the user tries to use voice input
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          console.log('✅ getUserMedia is available');
+        } else {
+          console.warn('⚠️ getUserMedia not available');
         }
       } catch (error) {
-        console.error('❌ Microphone permission error:', error);
-        if (error instanceof DOMException) {
-          if (error.name === 'NotAllowedError') {
-            toast({
-              title: 'Permission Denied',
-              description: 'Microphone permission was denied. You can enable it in browser/app settings.',
-              variant: 'destructive',
-            });
-          } else if (error.name === 'NotFoundError') {
-            toast({
-              title: 'No Microphone',
-              description: 'No microphone found on this device.',
-              variant: 'destructive',
-            });
-          }
-        }
+        console.error('❌ Error checking microphone permission:', error);
       }
     };
 
-    // Request permission only once on mount
-    requestPermission();
+    requestMicrophonePermission();
   }, [toast]);
 };

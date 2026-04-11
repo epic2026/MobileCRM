@@ -37,9 +37,16 @@ export interface CallRecordingPlugin {
   }>;
 }
 
+export interface MicrophonePermissionPlugin {
+  requestMicrophonePermission(): Promise<{ microphone: 'granted' | 'denied' }>;
+  checkMicrophonePermission(): Promise<{ microphone: 'granted' | 'denied' }>;
+  openAppSettings(): Promise<{ opened: boolean }>;
+}
+
 // Register native plugins
 export const CallLogPlugin = registerPlugin<CallLogPlugin>('CallLogPlugin');
 export const CallRecordingPlugin = registerPlugin<CallRecordingPlugin>('CallRecordingPlugin');
+export const MicrophonePermissionPlugin = registerPlugin<MicrophonePermissionPlugin>('MicrophonePermissionPlugin');
 
 // Helper to check if running in native app
 export const isNativeApp = (): boolean => {
