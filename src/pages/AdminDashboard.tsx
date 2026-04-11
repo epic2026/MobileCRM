@@ -45,22 +45,21 @@ import {
 } from '@/components/ui/select';
 import {
   Shield,
-  LayoutDashboard,
-  KanbanSquare,
   Users,
-  Puzzle,
   Settings,
   LogOut,
   Plus,
   UserCheck,
   UserX,
-  Mail,
   Pencil,
   Trash2,
   Upload,
   BarChart3,
   Activity,
   GripVertical,
+  Link2,
+  RefreshCw,
+  SendHorizontal,
 } from 'lucide-react';
 import {
   differenceInCalendarDays,
@@ -75,7 +74,7 @@ import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
 import type { Database } from '@/integrations/supabase/types';
 
-type AdminSection = 'dashboard' | 'kanban' | 'leads' | 'marketplace' | 'settings';
+type AdminSection = 'reports' | 'leads' | 'marketplace' | 'settings';
 type SettingsTab = 'users' | 'activity';
 type LeadStatus = Database['public']['Enums']['lead_status'];
 type Lead = Database['public']['Tables']['leads']['Row'];
@@ -121,12 +120,12 @@ interface ReportPreview {
   filename: string;
 }
 
-type MarketplaceApp = {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
+type ReportBlockId = 'summary' | 'insights' | 'scope' | 'table';
+
+type ZohoConnectorState = {
   enabled: boolean;
+  apiDomain: string;
+  accessToken: string;
 };
 
 const statusOrder: LeadStatus[] = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
@@ -151,46 +150,14 @@ const statusLabels: Record<LeadStatus, string> = {
   lost: 'Lost',
 };
 
-const defaultMarketplaceApps: MarketplaceApp[] = [
-  {
-    id: 'whatsapp-business',
-    name: 'WhatsApp Business',
-    description: 'Send templates, reminders, and follow-ups directly from lead workflows.',
-    category: 'Communication',
-    enabled: true,
-  },
-  {
-    id: 'google-calendar',
-    name: 'Google Calendar',
-    description: 'Sync meetings, demos, and reminder tasks for sales users.',
-    category: 'Scheduling',
-    enabled: false,
-  },
-  {
-    id: 'razorpay',
-    name: 'Razorpay',
-    description: 'Track payment intent and map transaction milestones to lead stages.',
-    category: 'Payments',
-    enabled: false,
-  },
-  {
-    id: 'zapier',
-    name: 'Zapier',
-    description: 'Push lead and call events into external systems with no-code automations.',
-    category: 'Automation',
-    enabled: false,
-  },
-];
-
 const AdminDashboard = () => {
   const { user, role, isLoading, signOut } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [activeSection, setActiveSection] = useState<AdminSection>('dashboard');
+  const [activeSection, setActiveSection] = useState<AdminSection>('reports');
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('users');
-  const [dragLeadId, setDragLeadId] = useState<string | null>(null);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -221,8 +188,17 @@ const AdminDashboard = () => {
     customStartDate: format(subDays(new Date(), 29), 'yyyy-MM-dd'),
     customEndDate: format(new Date(), 'yyyy-MM-dd'),
   });
-
-  const [marketplaceApps, setMarketplaceApps] = useState<MarketplaceApp[]>(defaultMarketplaceApps);
+  const [reportBlocks, setReportBlocks] = useState<ReportBlockId[]>(['summary', 'insights', 'scope', 'table']);
+  const [draggingReportBlock, setDraggingReportBlock] = useState<ReportBlockId | null>(null);
+  const [zohoConnector, setZohoConnector] = useState<ZohoConnectorState>({
+    enabled: false,
+    apiDomain: 'https://www.zohoapis.com',
+    accessToken: '',
+  });
+  const [zohoSyncState, setZohoSyncState] = useState<{ tasks: boolean; activities: boolean }>({
+    tasks: false,
+    activities: false,
+  });
 
   useEffect(() => {
     if (!isLoading && (!user || role !== 'admin')) {
@@ -231,22 +207,21 @@ const AdminDashboard = () => {
   }, [isLoading, navigate, role, user]);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem('admin-marketplace-apps');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as MarketplaceApp[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMarketplaceApps(parsed);
-        }
-      } catch {
-        // Ignore invalid cache.
+    const saved = window.localStorage.getItem('admin-zoho-connector');
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved) as ZohoConnectorState;
+      if (parsed?.apiDomain) {
+        setZohoConnector(parsed);
       }
+    } catch {
+      // Ignore invalid cache.
     }
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem('admin-marketplace-apps', JSON.stringify(marketplaceApps));
-  }, [marketplaceApps]);
+    window.localStorage.setItem('admin-zoho-connector', JSON.stringify(zohoConnector));
+  }, [zohoConnector]);
 
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ['admin-users'],
@@ -692,23 +667,6 @@ const AdminDashboard = () => {
     },
   });
 
-  const updateLeadStatus = useMutation({
-    mutationFn: async ({ leadId, status }: { leadId: string; status: LeadStatus }) => {
-      const { error } = await supabase
-        .from('leads')
-        .update({ status })
-        .eq('id', leadId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-leads'] });
-      toast({ title: 'Lead moved', description: 'Lead status updated from Kanban board.' });
-    },
-    onError: (error: Error) => {
-      toast({ title: 'Move failed', description: error.message, variant: 'destructive' });
-    },
-  });
-
   const handleSignOut = async () => {
     await signOut();
     navigate('/admin/login');
@@ -765,13 +723,100 @@ const AdminDashboard = () => {
     });
   };
 
-  const toggleMarketplaceApp = (appId: string, enabled: boolean) => {
-    setMarketplaceApps((prev) => prev.map((item) => (item.id === appId ? { ...item, enabled } : item)));
-    toast({
-      title: enabled ? 'Integration enabled' : 'Integration disabled',
-      description: 'Marketplace setting updated successfully.',
-    });
+  const reportBlockLabel: Record<ReportBlockId, string> = {
+    summary: 'Summary Cards',
+    insights: 'Insights',
+    scope: 'Report Scope',
+    table: 'Data Table',
   };
+
+  const moveReportBlock = (targetIndex: number) => {
+    if (!draggingReportBlock) return;
+    setReportBlocks((prev) => {
+      const withoutDragged = prev.filter((item) => item !== draggingReportBlock);
+      withoutDragged.splice(targetIndex, 0, draggingReportBlock);
+      return withoutDragged;
+    });
+    setDraggingReportBlock(null);
+  };
+
+  const zohoSyncMutation = useMutation({
+    mutationFn: async ({ mode }: { mode: 'tasks' | 'activities' }) => {
+      if (!zohoConnector.enabled || !zohoConnector.accessToken.trim()) {
+        throw new Error('Connect Zoho CRM first with a valid access token.');
+      }
+
+      const tasksPayload = leadTasks.slice(0, 100).map((task) => {
+        const lead = leadMap.get(task.lead_id || '');
+        return {
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          due_date: task.due_date,
+          status: task.status,
+          lead: lead
+            ? {
+                id: lead.id,
+                name: lead.name,
+                phone: lead.phone,
+                email: lead.email,
+              }
+            : null,
+        };
+      });
+
+      const activitiesPayload = activities.slice(0, 100).map((activity) => {
+        const lead = leadMap.get(activity.lead_id || '');
+        return {
+          id: activity.id,
+          type: activity.type,
+          title: activity.title,
+          description: activity.description,
+          created_at: activity.created_at,
+          lead: lead
+            ? {
+                id: lead.id,
+                name: lead.name,
+                phone: lead.phone,
+                email: lead.email,
+              }
+            : null,
+        };
+      });
+
+      const { data, error } = await supabase.functions.invoke('zoho_connector', {
+        body: {
+          mode,
+          apiDomain: zohoConnector.apiDomain,
+          accessToken: zohoConnector.accessToken,
+          records: mode === 'tasks' ? tasksPayload : activitiesPayload,
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Zoho sync failed');
+      }
+
+      if (data?.error) {
+        throw new Error(typeof data.error === 'string' ? data.error : 'Zoho sync failed');
+      }
+
+      return data as { success: number; failed: number; details?: Array<{ id: string; reason: string }> };
+    },
+    onSuccess: (result, variables) => {
+      toast({
+        title: variables.mode === 'tasks' ? 'Zoho task sync complete' : 'Zoho activity sync complete',
+        description: `${result.success} pushed, ${result.failed} failed.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Zoho sync failed', description: error.message, variant: 'destructive' });
+    },
+    onSettled: (_data, _error, variables) => {
+      if (!variables) return;
+      setZohoSyncState((prev) => ({ ...prev, [variables.mode]: false }));
+    },
+  });
 
   const renderDashboard = () => (
     <div className="space-y-6">
@@ -806,9 +851,9 @@ const AdminDashboard = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />
-            Dashboard & Reports Builder
+            Reports Builder
           </CardTitle>
-          <CardDescription>Create live reports for pipeline, activity, conversion, or owner performance.</CardDescription>
+          <CardDescription>Create live reports and reorder output sections with a simple drag-and-drop builder.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className={`grid gap-4 md:grid-cols-2 ${reportBuilder.dateRange === 'custom' ? 'xl:grid-cols-6' : 'xl:grid-cols-4'}`}>
@@ -947,6 +992,28 @@ const AdminDashboard = () => {
             </div>
           )}
 
+          <div className="rounded-2xl border bg-muted/20 p-4">
+            <p className="mb-3 text-sm font-medium text-foreground">Drag &amp; drop report sections</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              {reportBlocks.map((block, index) => (
+                <div
+                  key={block}
+                  draggable
+                  onDragStart={() => setDraggingReportBlock(block)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => moveReportBlock(index)}
+                  className="flex items-center justify-between rounded-lg border bg-background px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 text-sm text-foreground">
+                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                    {reportBlockLabel[block]}
+                  </div>
+                  <span className="text-xs text-muted-foreground">Position {index + 1}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-5 rounded-2xl border bg-muted/20 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -958,152 +1025,99 @@ const AdminDashboard = () => {
               </Badge>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {reportPreview.summaryCards.map((card) => (
-                <div key={card.label} className="rounded-xl border bg-background p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{card.label}</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{card.value}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{card.hint}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">AI-style Summary</CardTitle>
-                  <CardDescription>Quick leadership-ready insights from the selected dataset.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {reportPreview.insights.map((insight) => (
-                    <div key={insight} className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-foreground">
-                      {insight}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Report Scope</CardTitle>
-                  <CardDescription>Current filters driving this report.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm text-muted-foreground">
-                  <div className="flex items-center justify-between gap-3">
-                    <span>Type</span>
-                    <span className="font-medium capitalize text-foreground">{reportBuilder.reportType.replace('-', ' ')}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span>Date window</span>
-                    <span className="font-medium text-foreground">{reportDateWindow.label}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span>Owner</span>
-                    <span className="font-medium text-foreground">{selectedOwner?.full_name || selectedOwner?.email || 'All users'}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span>Rows available</span>
-                    <span className="font-medium text-foreground">{reportPreview.rows.length}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {(reportBuilder.format === 'table' || reportPreview.rows.length > 0) && (
-              <div className="overflow-hidden rounded-xl border bg-background">
-                <div className="border-b px-4 py-3">
-                  <p className="text-sm font-medium text-foreground">Detailed report table</p>
-                </div>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {reportPreview.columns.map((column) => (
-                        <TableHead key={column}>{column}</TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reportPreview.rows.length > 0 ? (
-                      reportPreview.rows.map((row, index) => (
-                        <TableRow key={`${reportPreview.filename}-${index}`}>
-                          {reportPreview.columns.map((column) => (
-                            <TableCell key={column}>{String(row[column] ?? '-')}</TableCell>
-                          ))}
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={reportPreview.columns.length} className="text-center text-muted-foreground">
-                          No rows match this report configuration yet.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-
-  const renderKanban = () => (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <KanbanSquare className="h-5 w-5" />
-            Kanban View (Drag & Drop)
-          </CardTitle>
-          <CardDescription>Drag leads between status columns to update pipeline stage.</CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <div className="grid min-w-[1260px] grid-cols-7 gap-3">
-            {statusOrder.map((status) => {
-              const statusLeads = leads.filter((lead) => lead.status === status);
-
-              return (
-                <div
-                  key={status}
-                  className="rounded-2xl border bg-muted/20 p-3"
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    if (dragLeadId) {
-                      updateLeadStatus.mutate({ leadId: dragLeadId, status });
-                      setDragLeadId(null);
-                    }
-                  }}
-                >
-                  <div className="mb-3 flex items-center justify-between">
-                    <Badge className={statusColors[status]}>{statusLabels[status]}</Badge>
-                    <span className="text-xs text-muted-foreground">{statusLeads.length}</span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {statusLeads.map((lead) => (
-                      <div
-                        key={lead.id}
-                        draggable
-                        onDragStart={() => setDragLeadId(lead.id)}
-                        onDragEnd={() => setDragLeadId(null)}
-                        className="cursor-grab rounded-xl border bg-background p-3 shadow-sm active:cursor-grabbing"
-                      >
-                        <div className="mb-2 flex items-start justify-between gap-2">
-                          <p className="text-sm font-semibold text-foreground">{lead.name}</p>
-                          <GripVertical className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <p className="text-xs text-muted-foreground">{lead.phone}</p>
-                        <p className="text-xs text-muted-foreground">{lead.company || 'No company'}</p>
+            {reportBlocks.map((block) => {
+              if (block === 'summary') {
+                return (
+                  <div key={block} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {reportPreview.summaryCards.map((card) => (
+                      <div key={card.label} className="rounded-xl border bg-background p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">{card.label}</p>
+                        <p className="mt-2 text-2xl font-semibold text-foreground">{card.value}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{card.hint}</p>
                       </div>
                     ))}
-                    {statusLeads.length === 0 && (
-                      <div className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">
-                        Drop lead here
-                      </div>
-                    )}
                   </div>
+                );
+              }
+
+              if (block === 'insights') {
+                return (
+                  <Card key={block}>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Insights</CardTitle>
+                      <CardDescription>Quick leadership-ready insights from the selected dataset.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {reportPreview.insights.map((insight) => (
+                        <div key={insight} className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-foreground">
+                          {insight}
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                );
+              }
+
+              if (block === 'scope') {
+                return (
+                  <Card key={block}>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Report Scope</CardTitle>
+                      <CardDescription>Current filters driving this report.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm text-muted-foreground">
+                      <div className="flex items-center justify-between gap-3">
+                        <span>Type</span>
+                        <span className="font-medium capitalize text-foreground">{reportBuilder.reportType.replace('-', ' ')}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>Date window</span>
+                        <span className="font-medium text-foreground">{reportDateWindow.label}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>Owner</span>
+                        <span className="font-medium text-foreground">{selectedOwner?.full_name || selectedOwner?.email || 'All users'}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span>Rows available</span>
+                        <span className="font-medium text-foreground">{reportPreview.rows.length}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+
+              return (
+                <div key={block} className="overflow-hidden rounded-xl border bg-background">
+                  <div className="border-b px-4 py-3">
+                    <p className="text-sm font-medium text-foreground">Detailed report table</p>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {reportPreview.columns.map((column) => (
+                          <TableHead key={column}>{column}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reportPreview.rows.length > 0 ? (
+                        reportPreview.rows.map((row, index) => (
+                          <TableRow key={`${reportPreview.filename}-${index}`}>
+                            {reportPreview.columns.map((column) => (
+                              <TableCell key={column}>{String(row[column] ?? '-')}</TableCell>
+                            ))}
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={reportPreview.columns.length} className="text-center text-muted-foreground">
+                            No rows match this report configuration yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
                 </div>
               );
             })}
@@ -1137,34 +1151,82 @@ const AdminDashboard = () => {
   );
 
   const renderMarketplace = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Puzzle className="h-5 w-5" />
-          App Marketplace
-        </CardTitle>
-        <CardDescription>Enable, disable, and configure integrations available to your sales team.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {marketplaceApps.map((app) => (
-          <div key={app.id} className="rounded-xl border p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-foreground">{app.name}</p>
-                <p className="text-xs text-muted-foreground">{app.description}</p>
-                <Badge variant="secondary" className="text-[10px]">{app.category}</Badge>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Link2 className="h-5 w-5" />
+            Connect Your CRM
+          </CardTitle>
+          <CardDescription>Zoho CRM connector is available now. Additional CRM integrations will be added later.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-xl border p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Zoho CRM</p>
+                <p className="text-xs text-muted-foreground">Push lead activities and tasks from MobileCRM to Zoho CRM records.</p>
               </div>
-              <div className="flex items-center gap-3">
-                <Switch checked={app.enabled} onCheckedChange={(checked) => toggleMarketplaceApp(app.id, checked)} />
-                <Button size="sm" variant="outline" onClick={() => toast({ title: 'Open configuration', description: `${app.name} configuration panel will open here.` })}>
-                  Configure
-                </Button>
+              <Switch
+                checked={zohoConnector.enabled}
+                onCheckedChange={(checked) => setZohoConnector((prev) => ({ ...prev, enabled: checked }))}
+              />
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Zoho API Domain</Label>
+                <Input
+                  value={zohoConnector.apiDomain}
+                  onChange={(event) => setZohoConnector((prev) => ({ ...prev, apiDomain: event.target.value.trim() }))}
+                  placeholder="https://www.zohoapis.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Zoho OAuth Access Token</Label>
+                <Input
+                  type="password"
+                  value={zohoConnector.accessToken}
+                  onChange={(event) => setZohoConnector((prev) => ({ ...prev, accessToken: event.target.value }))}
+                  placeholder="1000.xxxxx"
+                />
               </div>
             </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Required scopes: ZohoCRM.modules.tasks.CREATE, ZohoCRM.modules.calls.CREATE, ZohoCRM.modules.leads.READ, ZohoSearch.securesearch.READ
+            </p>
           </div>
-        ))}
-      </CardContent>
-    </Card>
+
+          <div className="rounded-xl border bg-muted/20 p-4">
+            <p className="text-sm font-medium text-foreground">Sync Actions</p>
+            <p className="mb-3 text-xs text-muted-foreground">Push records against matched Zoho leads (matched by email, then phone, then name).</p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => {
+                  setZohoSyncState((prev) => ({ ...prev, tasks: true }));
+                  zohoSyncMutation.mutate({ mode: 'tasks' });
+                }}
+                disabled={zohoSyncState.tasks || zohoSyncMutation.isPending || !zohoConnector.enabled}
+              >
+                {zohoSyncState.tasks ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <SendHorizontal className="mr-2 h-4 w-4" />}
+                Push Tasks to Zoho
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setZohoSyncState((prev) => ({ ...prev, activities: true }));
+                  zohoSyncMutation.mutate({ mode: 'activities' });
+                }}
+                disabled={zohoSyncState.activities || zohoSyncMutation.isPending || !zohoConnector.enabled}
+              >
+                {zohoSyncState.activities ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <SendHorizontal className="mr-2 h-4 w-4" />}
+                Push Activities to Zoho
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 
   const renderSettings = () => (
@@ -1386,7 +1448,7 @@ const AdminDashboard = () => {
             <Shield className="h-8 w-8 text-primary" />
             <div className="min-w-0">
               <h1 className="truncate text-xl font-bold text-foreground">Admin Control Center</h1>
-              <p className="truncate text-sm text-muted-foreground">Web-first workspace for leads, pipeline, reports, and settings</p>
+              <p className="truncate text-sm text-muted-foreground">Web-first workspace for reports, leads, CRM sync, and settings</p>
             </div>
           </div>
           <Button variant="outline" onClick={handleSignOut}>
@@ -1400,18 +1462,11 @@ const AdminDashboard = () => {
         <aside className="h-fit rounded-2xl border bg-card p-3 md:sticky md:top-24">
           <nav className="space-y-1">
             <button
-              onClick={() => setActiveSection('dashboard')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'dashboard' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              onClick={() => setActiveSection('reports')}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'reports' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
             >
-              <LayoutDashboard className="h-4 w-4" />
-              Dashboard & Reports
-            </button>
-            <button
-              onClick={() => setActiveSection('kanban')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'kanban' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-            >
-              <KanbanSquare className="h-4 w-4" />
-              Kanban View
+              <BarChart3 className="h-4 w-4" />
+              Reports
             </button>
             <button
               onClick={() => setActiveSection('leads')}
@@ -1424,8 +1479,8 @@ const AdminDashboard = () => {
               onClick={() => setActiveSection('marketplace')}
               className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'marketplace' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
             >
-              <Puzzle className="h-4 w-4" />
-              App Marketplace
+              <Link2 className="h-4 w-4" />
+              Connect CRM
             </button>
             <button
               onClick={() => setActiveSection('settings')}
@@ -1438,8 +1493,7 @@ const AdminDashboard = () => {
         </aside>
 
         <main className="min-w-0">
-          {activeSection === 'dashboard' && renderDashboard()}
-          {activeSection === 'kanban' && renderKanban()}
+          {activeSection === 'reports' && renderDashboard()}
           {activeSection === 'leads' && renderLeads()}
           {activeSection === 'marketplace' && renderMarketplace()}
           {activeSection === 'settings' && renderSettings()}
