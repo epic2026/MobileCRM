@@ -54,6 +54,7 @@ import {
   Pencil,
   Trash2,
   Upload,
+  LayoutDashboard,
   Activity,
   Phone,
   Link2,
@@ -65,7 +66,7 @@ import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
 import type { Database } from '@/integrations/supabase/types';
 
-type AdminSection = 'leads' | 'call-activity' | 'marketplace' | 'settings';
+type AdminSection = 'overview' | 'leads' | 'call-activity' | 'marketplace' | 'settings';
 type SettingsTab = 'users' | 'activity';
 type Lead = Database['public']['Tables']['leads']['Row'];
 type LeadActivity = Database['public']['Tables']['lead_activities']['Row'];
@@ -103,7 +104,7 @@ const AdminDashboard = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [activeSection, setActiveSection] = useState<AdminSection>('leads');
+  const [activeSection, setActiveSection] = useState<AdminSection>('overview');
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('users');
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -135,8 +136,9 @@ const AdminDashboard = () => {
     tasks: false,
     activities: false,
   });
-  const [callDateFrom, setCallDateFrom] = useState(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
-  const [callDateTo, setCallDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [globalDateFrom, setGlobalDateFrom] = useState(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
+  const [globalDateTo, setGlobalDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [globalOwnerId, setGlobalOwnerId] = useState('all');
   const [callReportView, setCallReportView] = useState<'user' | 'lead' | 'calendar'>('user');
 
   useEffect(() => {
@@ -278,6 +280,114 @@ const AdminDashboard = () => {
 
   const leadMap = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads]);
   const userMap = useMemo(() => new Map(users.map((entry) => [entry.id, entry])), [users]);
+  const salesUsers = useMemo(
+    () => users.filter((entry) => entry.role === 'sales' && entry.is_active),
+    [users],
+  );
+
+  const globalDateWindow = useMemo(() => {
+    const from = new Date(`${globalDateFrom}T00:00:00`);
+    const to = new Date(`${globalDateTo}T23:59:59`);
+    const invalidRange = Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from.getTime() > to.getTime();
+    return { from, to, invalidRange };
+  }, [globalDateFrom, globalDateTo]);
+
+  const ownerMatches = (userId: string | null | undefined) =>
+    globalOwnerId === 'all' || (!!userId && userId === globalOwnerId);
+
+  const filteredCallLogs = useMemo(() => {
+    if (globalDateWindow.invalidRange) return [];
+    return callLogs.filter((entry) => {
+      const createdAt = new Date(entry.created_at);
+      const time = createdAt.getTime();
+      if (Number.isNaN(time)) return false;
+      return time >= globalDateWindow.from.getTime()
+        && time <= globalDateWindow.to.getTime()
+        && ownerMatches(entry.user_id);
+    });
+  }, [callLogs, globalDateWindow.from, globalDateWindow.invalidRange, globalDateWindow.to, globalOwnerId]);
+
+  const filteredActivities = useMemo(() => {
+    if (globalDateWindow.invalidRange) return [];
+    return activities.filter((entry) => {
+      const createdAt = new Date(entry.created_at);
+      const time = createdAt.getTime();
+      if (Number.isNaN(time)) return false;
+      return time >= globalDateWindow.from.getTime()
+        && time <= globalDateWindow.to.getTime()
+        && ownerMatches(entry.user_id);
+    });
+  }, [activities, globalDateWindow.from, globalDateWindow.invalidRange, globalDateWindow.to, globalOwnerId]);
+
+  const filteredLeads = useMemo(() => {
+    if (globalDateWindow.invalidRange) return [];
+    return leads.filter((entry) => {
+      const createdAt = new Date(entry.created_at);
+      const time = createdAt.getTime();
+      if (Number.isNaN(time)) return false;
+      return time >= globalDateWindow.from.getTime()
+        && time <= globalDateWindow.to.getTime()
+        && ownerMatches(entry.user_id);
+    });
+  }, [globalDateWindow.from, globalDateWindow.invalidRange, globalDateWindow.to, globalOwnerId, leads]);
+
+  const dashboardInsights = useMemo(() => {
+    const connectedCalls = filteredCallLogs.filter((entry) => (entry.duration || 0) > 0).length;
+    const connectRate = filteredCallLogs.length
+      ? Math.round((connectedCalls / filteredCallLogs.length) * 100)
+      : 0;
+
+    const overdueTasks = leadTasks.filter((task) => {
+      if (!task.due_date || task.status === 'completed') return false;
+      if (globalOwnerId !== 'all' && task.user_id !== globalOwnerId) return false;
+      return new Date(task.due_date).getTime() < new Date().setHours(0, 0, 0, 0);
+    });
+
+    const taskLeadIds = new Set(
+      leadTasks
+        .filter((task) => task.lead_id)
+        .map((task) => task.lead_id as string),
+    );
+
+    const unattendedCalls = filteredCallLogs.filter((entry) =>
+      entry.type === 'missed'
+      || ((entry.type === 'outgoing') && (entry.duration || 0) === 0)
+      || ((entry.outcome || '').toLowerCase().includes('no answer')),
+    );
+
+    const callsWithoutFollowup = unattendedCalls.filter((entry) =>
+      !entry.lead_id || !taskLeadIds.has(entry.lead_id),
+    );
+
+    const staleLeads = filteredLeads.filter((lead) => {
+      const updatedAt = new Date(lead.updated_at).getTime();
+      if (Number.isNaN(updatedAt)) return false;
+      const fourteenDaysAgo = subDays(new Date(), 14).getTime();
+      return updatedAt < fourteenDaysAgo;
+    });
+
+    const userCalls = new Map<string, { user: string; calls: number }>();
+    filteredCallLogs.forEach((entry) => {
+      const key = entry.user_id || 'unassigned';
+      const label = entry.user_id
+        ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'Assigned user'
+        : 'System/Unassigned';
+      const current = userCalls.get(key) || { user: label, calls: 0 };
+      current.calls += 1;
+      userCalls.set(key, current);
+    });
+
+    const topUser = Array.from(userCalls.values()).sort((a, b) => b.calls - a.calls)[0] || null;
+
+    return {
+      connectRate,
+      overdueTasks: overdueTasks.length,
+      callsWithoutFollowup: callsWithoutFollowup.length,
+      staleLeads: staleLeads.length,
+      topUser,
+      connectedCalls,
+    };
+  }, [filteredCallLogs, filteredLeads, globalOwnerId, leadTasks, userMap]);
 
   const formatCallDuration = (seconds: number) => {
     const safeSeconds = Math.max(0, Math.round(seconds || 0));
@@ -288,18 +398,7 @@ const AdminDashboard = () => {
   };
 
   const callActivityReport = useMemo(() => {
-    const from = new Date(`${callDateFrom}T00:00:00`);
-    const to = new Date(`${callDateTo}T23:59:59`);
-    const invalidRange = Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from.getTime() > to.getTime();
-
-    const filtered = invalidRange
-      ? []
-      : callLogs.filter((entry) => {
-          const createdAt = new Date(entry.created_at);
-          const time = createdAt.getTime();
-          if (Number.isNaN(time)) return false;
-          return time >= from.getTime() && time <= to.getTime();
-        });
+    const filtered = filteredCallLogs;
 
     const byUser = new Map<string, {
       user: string;
@@ -402,7 +501,7 @@ const AdminDashboard = () => {
     const totalConnectedCalls = filtered.filter((entry) => (entry.duration || 0) > 0).length;
 
     return {
-      invalidRange,
+      invalidRange: globalDateWindow.invalidRange,
       filtered,
       totals: {
         totalCalls: filtered.length,
@@ -414,7 +513,7 @@ const AdminDashboard = () => {
       byLead: Array.from(byLead.values()).sort((a, b) => b.totalCalls - a.totalCalls),
       byCalendar: Array.from(byCalendar.values()).sort((a, b) => b.date.localeCompare(a.date)),
     };
-  }, [callDateFrom, callDateTo, callLogs, leadMap, userMap]);
+  }, [filteredCallLogs, globalDateWindow.invalidRange, leadMap, userMap]);
 
   const createUser = useMutation({
     mutationFn: async (data: { email: string; password: string; fullName: string; role: 'admin' | 'sales' }) => {
@@ -702,8 +801,144 @@ const AdminDashboard = () => {
     }
   };
 
+  const renderOverview = () => (
+    <div className="space-y-4">
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="border-b bg-card">
+          <CardTitle className="flex items-center gap-2">
+            <LayoutDashboard className="h-5 w-5" />
+            Executive Overview
+          </CardTitle>
+          <CardDescription>High-level operational status for leads, calls, and team execution.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-4">
+          {globalDateWindow.invalidRange && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              Invalid global date range. Please select a valid From and To date.
+            </div>
+          )}
+
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+            <Card className="border-border/70">
+              <CardContent className="pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Leads Created</p>
+                <p className="text-2xl font-semibold">{filteredLeads.length}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Calls</p>
+                <p className="text-2xl font-semibold">{filteredCallLogs.length}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Connect Rate</p>
+                <p className="text-2xl font-semibold">{dashboardInsights.connectRate}%</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Overdue Tasks</p>
+                <p className="text-2xl font-semibold">{dashboardInsights.overdueTasks}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Activities Logged</p>
+                <p className="text-2xl font-semibold">{filteredActivities.length}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Top Performer</p>
+                <p className="truncate text-sm font-semibold">{dashboardInsights.topUser?.user || 'N/A'}</p>
+                <p className="text-xs text-muted-foreground">{dashboardInsights.topUser?.calls || 0} calls</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="text-base">Action Center</CardTitle>
+                <CardDescription>Priority operational issues from the selected filter scope.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium">Missed/Unanswered Without Follow-up</p>
+                    <p className="text-xs text-muted-foreground">Calls needing immediate task creation.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <p className="text-lg font-semibold">{dashboardInsights.callsWithoutFollowup}</p>
+                    <Button size="sm" variant="outline" onClick={() => setActiveSection('call-activity')}>Review</Button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium">Overdue Tasks</p>
+                    <p className="text-xs text-muted-foreground">Pending items past due date.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <p className="text-lg font-semibold">{dashboardInsights.overdueTasks}</p>
+                    <Button size="sm" variant="outline" onClick={() => setActiveSection('settings')}>Open</Button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium">Stale Leads</p>
+                    <p className="text-xs text-muted-foreground">Leads with no update in the last 14 days.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <p className="text-lg font-semibold">{dashboardInsights.staleLeads}</p>
+                    <Button size="sm" variant="outline" onClick={() => setActiveSection('leads')}>Act</Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70">
+              <CardHeader>
+                <CardTitle className="text-base">Team Call Snapshot</CardTitle>
+                <CardDescription>Top users by call volume in the selected date range.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-[320px] overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>User</TableHead>
+                        <TableHead>Calls</TableHead>
+                        <TableHead>Connected</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {callActivityReport.byUser.slice(0, 8).map((entry) => (
+                        <TableRow key={`overview-${entry.user}`}>
+                          <TableCell className="font-medium">{entry.user}</TableCell>
+                          <TableCell>{entry.totalCalls}</TableCell>
+                          <TableCell>{entry.connectedCalls}</TableCell>
+                        </TableRow>
+                      ))}
+                      {callActivityReport.byUser.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-center text-muted-foreground">No call data in selected range.</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   const renderLeads = () => (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
         <CardHeader className="flex flex-col gap-3 border-b bg-muted/20 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -726,7 +961,7 @@ const AdminDashboard = () => {
             </DialogContent>
           </Dialog>
         </CardHeader>
-        <CardContent className="pt-5">
+        <CardContent className="pt-4">
           <LeadAssignment />
         </CardContent>
       </Card>
@@ -734,34 +969,34 @@ const AdminDashboard = () => {
   );
 
   const renderCallActivity = () => (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
-        <CardHeader className="space-y-3 border-b bg-muted/20">
+        <CardHeader className="space-y-2 border-b bg-card">
           <CardTitle className="flex items-center gap-2">
             <Phone className="h-5 w-5" />
             Call Activity Reports
           </CardTitle>
           <CardDescription>Actionable call reporting by user, by lead, and by calendar day.</CardDescription>
           <div className="inline-flex w-fit items-center rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
-            Range: {format(new Date(callDateFrom), 'dd MMM yyyy')} - {format(new Date(callDateTo), 'dd MMM yyyy')}
+            Range: {format(new Date(globalDateFrom), 'dd MMM yyyy')} - {format(new Date(globalDateTo), 'dd MMM yyyy')}
           </div>
         </CardHeader>
-        <CardContent className="space-y-5 pt-5">
+        <CardContent className="space-y-4 pt-4">
           <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">From</Label>
-              <Input type="date" value={callDateFrom} onChange={(event) => setCallDateFrom(event.target.value)} />
+              <Input type="date" value={globalDateFrom} onChange={(event) => setGlobalDateFrom(event.target.value)} />
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">To</Label>
-              <Input type="date" value={callDateTo} onChange={(event) => setCallDateTo(event.target.value)} />
+              <Input type="date" value={globalDateTo} onChange={(event) => setGlobalDateTo(event.target.value)} />
             </div>
             <div className="flex items-end justify-start md:justify-end">
               <Button
                 variant="outline"
                 onClick={() => {
-                  setCallDateFrom(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
-                  setCallDateTo(format(new Date(), 'yyyy-MM-dd'));
+                  setGlobalDateFrom(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
+                  setGlobalDateTo(format(new Date(), 'yyyy-MM-dd'));
                 }}
               >
                 Reset to Last 30 Days
@@ -775,27 +1010,27 @@ const AdminDashboard = () => {
             </div>
           )}
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="border-border/70">
-              <CardContent className="pt-4">
+              <CardContent className="pt-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total Calls</p>
                 <p className="text-2xl font-semibold">{callActivityReport.totals.totalCalls}</p>
               </CardContent>
             </Card>
             <Card className="border-border/70">
-              <CardContent className="pt-4">
+              <CardContent className="pt-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Connected Calls</p>
                 <p className="text-2xl font-semibold">{callActivityReport.totals.totalConnectedCalls}</p>
               </CardContent>
             </Card>
             <Card className="border-border/70">
-              <CardContent className="pt-4">
+              <CardContent className="pt-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Missed Calls</p>
                 <p className="text-2xl font-semibold">{callActivityReport.totals.totalMissedCalls}</p>
               </CardContent>
             </Card>
             <Card className="border-border/70">
-              <CardContent className="pt-4">
+              <CardContent className="pt-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Talk Time</p>
                 <p className="text-xl font-semibold">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
               </CardContent>
@@ -830,7 +1065,7 @@ const AdminDashboard = () => {
                 <CardDescription>Measure each user's call load, connect quality, and direction mix.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="max-h-[540px] overflow-auto">
+                <div className="max-h-[460px] overflow-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -874,7 +1109,7 @@ const AdminDashboard = () => {
                 <CardDescription>Track interaction intensity, ownership, and follow-up freshness by lead.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="max-h-[540px] overflow-auto">
+                <div className="max-h-[460px] overflow-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -918,7 +1153,7 @@ const AdminDashboard = () => {
                 <CardDescription>Daily pattern of call volume, connect rate, and call direction.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="max-h-[540px] overflow-auto">
+                <div className="max-h-[460px] overflow-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -960,7 +1195,7 @@ const AdminDashboard = () => {
   );
 
   const renderMarketplace = () => (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
         <CardHeader className="border-b bg-muted/20">
           <CardTitle className="flex items-center gap-2">
@@ -969,8 +1204,8 @@ const AdminDashboard = () => {
           </CardTitle>
           <CardDescription>Enterprise CRM synchronization workspace for secure OAuth, auditability, and controlled sync actions.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4 pt-5">
-          <div className="rounded-xl border bg-background p-5 shadow-sm">
+        <CardContent className="space-y-4 pt-4">
+          <div className="rounded-xl border bg-background p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-semibold text-foreground">Zoho CRM</p>
@@ -1026,7 +1261,7 @@ const AdminDashboard = () => {
             )}
           </div>
 
-          <div className="rounded-xl border bg-muted/20 p-5">
+          <div className="rounded-xl border bg-muted/20 p-4">
             <p className="text-sm font-medium text-foreground">How this works (Zoho Integration)</p>
             <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
               <p>1. Click Connect Zoho CRM and complete OAuth in the popup.</p>
@@ -1037,7 +1272,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          <div className="rounded-xl border bg-muted/20 p-5">
+          <div className="rounded-xl border bg-muted/20 p-4">
             <p className="text-sm font-medium text-foreground">Sync Actions</p>
             <p className="mb-3 text-xs text-muted-foreground">Push records against matched Zoho leads (matched by email, then phone, then name).</p>
             <div className="flex flex-wrap gap-2">
@@ -1070,7 +1305,7 @@ const AdminDashboard = () => {
   );
 
   const renderSettings = () => (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
         <CardHeader className="border-b bg-muted/20">
           <CardTitle>Administration & Access</CardTitle>
@@ -1169,7 +1404,7 @@ const AdminDashboard = () => {
               </DialogContent>
             </Dialog>
           </CardHeader>
-          <CardContent className="pt-5">
+          <CardContent className="pt-4">
             <div className="overflow-hidden rounded-xl border">
               <Table>
                 <TableHeader>
@@ -1239,7 +1474,7 @@ const AdminDashboard = () => {
             </CardTitle>
             <CardDescription>Audit activity feed across lead actions for admin visibility.</CardDescription>
           </CardHeader>
-          <CardContent className="pt-5">
+          <CardContent className="pt-4">
             <div className="overflow-hidden rounded-xl border">
               <Table>
                 <TableHeader>
@@ -1251,7 +1486,7 @@ const AdminDashboard = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {activities.map((entry) => (
+                  {filteredActivities.map((entry) => (
                     <TableRow key={entry.id}>
                       <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy h:mm a')}</TableCell>
                       <TableCell>
@@ -1264,7 +1499,7 @@ const AdminDashboard = () => {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {activities.length === 0 && (
+                  {filteredActivities.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={4} className="text-center text-muted-foreground">
                         No activity logs yet.
@@ -1293,16 +1528,16 @@ const AdminDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-muted/20">
+    <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="mx-auto flex max-w-7xl items-start justify-between gap-3 px-6 py-4">
+        <div className="mx-auto flex w-full max-w-[1480px] items-start justify-between gap-3 px-5 py-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
               <Shield className="h-6 w-6 text-primary" />
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-xl font-bold text-foreground">Admin Control Center</h1>
-              <p className="truncate text-sm text-muted-foreground">Enterprise workspace for lead ops, call intelligence, CRM sync, and governance</p>
+              <p className="truncate text-sm text-muted-foreground">Enterprise workspace for overview, lead ops, call intelligence, CRM sync, and governance</p>
             </div>
           </div>
           <Button variant="outline" onClick={handleSignOut} className="bg-card">
@@ -1312,8 +1547,8 @@ const AdminDashboard = () => {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-6 py-6 md:h-[calc(100vh-110px)] md:grid-cols-[250px_minmax(0,1fr)]">
-        <aside className="h-fit rounded-2xl border bg-card p-3 shadow-sm md:sticky md:top-24">
+      <div className="mx-auto grid w-full max-w-[1480px] grid-cols-1 gap-4 px-5 py-4 lg:h-[calc(100vh-96px)] lg:grid-cols-[270px_minmax(0,1fr)]">
+        <aside className="h-fit rounded-2xl border bg-card p-3 shadow-sm lg:sticky lg:top-20">
           <div className="mb-3 rounded-xl border bg-muted/20 px-3 py-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Workspace</p>
             <p className="text-sm font-medium text-foreground">Enterprise Admin</p>
@@ -1323,29 +1558,36 @@ const AdminDashboard = () => {
           </div>
           <nav className="space-y-1">
             <button
+              onClick={() => setActiveSection('overview')}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'overview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              Overview
+            </button>
+            <button
               onClick={() => setActiveSection('leads')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'leads' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'leads' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
             >
               <Users className="h-4 w-4" />
               Manage Leads
             </button>
             <button
               onClick={() => setActiveSection('call-activity')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'call-activity' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'call-activity' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
             >
               <Phone className="h-4 w-4" />
               Call Activity
             </button>
             <button
               onClick={() => setActiveSection('marketplace')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'marketplace' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'marketplace' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
             >
               <Link2 className="h-4 w-4" />
               Connect CRM
             </button>
             <button
               onClick={() => setActiveSection('settings')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'settings' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'settings' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
             >
               <Settings className="h-4 w-4" />
               Settings
@@ -1353,7 +1595,50 @@ const AdminDashboard = () => {
           </nav>
         </aside>
 
-        <main className="min-w-0 md:overflow-y-auto md:pr-2 md:pb-2">
+        <main className="min-w-0 lg:overflow-y-auto lg:pr-1 lg:pb-1">
+          <Card className="mb-4 border-border/80 shadow-sm">
+            <CardContent className="pt-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Global From</Label>
+                  <Input type="date" value={globalDateFrom} onChange={(event) => setGlobalDateFrom(event.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Global To</Label>
+                  <Input type="date" value={globalDateTo} onChange={(event) => setGlobalDateTo(event.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Owner Scope</Label>
+                  <Select value={globalOwnerId} onValueChange={setGlobalOwnerId}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Users</SelectItem>
+                      {salesUsers.map((entry) => (
+                        <SelectItem key={entry.id} value={entry.id}>{entry.full_name || entry.email}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end gap-2">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      setGlobalDateFrom(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
+                      setGlobalDateTo(format(new Date(), 'yyyy-MM-dd'));
+                      setGlobalOwnerId('all');
+                    }}
+                  >
+                    Reset Filters
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {activeSection === 'overview' && renderOverview()}
           {activeSection === 'leads' && renderLeads()}
           {activeSection === 'call-activity' && renderCallActivity()}
           {activeSection === 'marketplace' && renderMarketplace()}
