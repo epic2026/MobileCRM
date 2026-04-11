@@ -157,7 +157,7 @@ const AdminDashboard = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
-  const [deleteConfirm, setDeleteConfirm] = useState<{ userId: string; email: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ userId: string; email: string; mode: 'deactivate' | 'delete' } | null>(null);
 
   const [newUserData, setNewUserData] = useState({
     email: '',
@@ -182,9 +182,6 @@ const AdminDashboard = () => {
     tasks: false,
     activities: false,
   });
-  const [globalDateFrom, setGlobalDateFrom] = useState(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
-  const [globalDateTo, setGlobalDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [globalOwnerId, setGlobalOwnerId] = useState('all');
   const [callReportView, setCallReportView] = useState<'overview' | 'user' | 'logs'>('overview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -351,51 +348,11 @@ const AdminDashboard = () => {
     [users],
   );
 
-  const globalDateWindow = useMemo(() => {
-    const from = new Date(`${globalDateFrom}T00:00:00`);
-    const to = new Date(`${globalDateTo}T23:59:59`);
-    const invalidRange = Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from.getTime() > to.getTime();
-    return { from, to, invalidRange };
-  }, [globalDateFrom, globalDateTo]);
+  const filteredCallLogs = useMemo(() => callLogs, [callLogs]);
 
-  const ownerMatches = (userId: string | null | undefined) =>
-    globalOwnerId === 'all' || (!!userId && userId === globalOwnerId);
+  const filteredActivities = useMemo(() => activities, [activities]);
 
-  const filteredCallLogs = useMemo(() => {
-    if (globalDateWindow.invalidRange) return [];
-    return callLogs.filter((entry) => {
-      const createdAt = new Date(entry.created_at);
-      const time = createdAt.getTime();
-      if (Number.isNaN(time)) return false;
-      return time >= globalDateWindow.from.getTime()
-        && time <= globalDateWindow.to.getTime()
-        && ownerMatches(entry.user_id);
-    });
-  }, [callLogs, globalDateWindow.from, globalDateWindow.invalidRange, globalDateWindow.to, globalOwnerId]);
-
-  const filteredActivities = useMemo(() => {
-    if (globalDateWindow.invalidRange) return [];
-    return activities.filter((entry) => {
-      const createdAt = new Date(entry.created_at);
-      const time = createdAt.getTime();
-      if (Number.isNaN(time)) return false;
-      return time >= globalDateWindow.from.getTime()
-        && time <= globalDateWindow.to.getTime()
-        && ownerMatches(entry.user_id);
-    });
-  }, [activities, globalDateWindow.from, globalDateWindow.invalidRange, globalDateWindow.to, globalOwnerId]);
-
-  const filteredLeads = useMemo(() => {
-    if (globalDateWindow.invalidRange) return [];
-    return leads.filter((entry) => {
-      const createdAt = new Date(entry.created_at);
-      const time = createdAt.getTime();
-      if (Number.isNaN(time)) return false;
-      return time >= globalDateWindow.from.getTime()
-        && time <= globalDateWindow.to.getTime()
-        && ownerMatches(entry.user_id);
-    });
-  }, [globalDateWindow.from, globalDateWindow.invalidRange, globalDateWindow.to, globalOwnerId, leads]);
+  const filteredLeads = useMemo(() => leads, [leads]);
 
   const dashboardInsights = useMemo(() => {
     const connectedCalls = filteredCallLogs.filter((entry) => (entry.duration || 0) > 0).length;
@@ -405,7 +362,6 @@ const AdminDashboard = () => {
 
     const overdueTasks = leadTasks.filter((task) => {
       if (!task.due_date || task.status === 'completed') return false;
-      if (globalOwnerId !== 'all' && task.user_id !== globalOwnerId) return false;
       return new Date(task.due_date).getTime() < new Date().setHours(0, 0, 0, 0);
     });
 
@@ -453,7 +409,7 @@ const AdminDashboard = () => {
       topUser,
       connectedCalls,
     };
-  }, [filteredCallLogs, filteredLeads, globalOwnerId, leadTasks, userMap]);
+  }, [filteredCallLogs, filteredLeads, leadTasks, userMap]);
 
   const leadRows = useMemo(() => {
     const searchText = leadSearch.trim().toLowerCase();
@@ -600,7 +556,7 @@ const AdminDashboard = () => {
     const totalConnectedCalls = filtered.filter((entry) => (entry.duration || 0) > 0).length;
 
     return {
-      invalidRange: globalDateWindow.invalidRange,
+      invalidRange: false,
       filtered,
       totals: {
         totalCalls: filtered.length,
@@ -612,7 +568,7 @@ const AdminDashboard = () => {
       byLead: Array.from(byLead.values()).sort((a, b) => b.totalCalls - a.totalCalls),
       byCalendar: Array.from(byCalendar.values()).sort((a, b) => b.date.localeCompare(a.date)),
     };
-  }, [filteredCallLogs, globalDateWindow.invalidRange, leadMap, userMap]);
+  }, [filteredCallLogs, leadMap, userMap]);
 
   const createUser = useMutation({
     mutationFn: async (data: { email: string; password: string; fullName: string; role: 'admin' | 'sales' }) => {
@@ -706,11 +662,29 @@ const AdminDashboard = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      toast({ title: 'User Removed', description: 'User access has been removed and account deactivated.' });
+      toast({ title: 'User Deactivated', description: 'User access has been removed and account deactivated.' });
       setDeleteConfirm(null);
     },
     onError: (error: Error) => {
-      toast({ title: 'Failed to Remove User', description: error.message, variant: 'destructive' });
+      toast({ title: 'Failed to Deactivate User', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const deleteUser = useMutation({
+    mutationFn: async ({ userId }: { userId: string }) => {
+      const { data, error } = await supabase.functions.invoke('delete_user', {
+        body: { userId },
+      });
+      if (error) throw new Error(error.message || 'Delete failed');
+      if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : 'Delete failed');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: 'User Deleted', description: 'User has been permanently deleted.' });
+      setDeleteConfirm(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Delete Failed', description: error.message, variant: 'destructive' });
     },
   });
 
@@ -935,12 +909,6 @@ const AdminDashboard = () => {
           <CardDescription>High-level operational status for leads, calls, and team execution.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
-          {globalDateWindow.invalidRange && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-              Invalid global date range. Please select a valid From and To date.
-            </div>
-          )}
-
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
             <Card className="border-border/70">
               <CardContent className="pt-3">
@@ -1290,39 +1258,8 @@ const AdminDashboard = () => {
             Call Activity Reports
           </CardTitle>
           <CardDescription>Actionable call reporting by user, by lead, and by calendar day.</CardDescription>
-          <div className="inline-flex w-fit items-center rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
-            Range: {format(new Date(globalDateFrom), 'dd MMM yyyy')} - {format(new Date(globalDateTo), 'dd MMM yyyy')}
-          </div>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
-          <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">From</Label>
-              <Input type="date" value={globalDateFrom} onChange={(event) => setGlobalDateFrom(event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">To</Label>
-              <Input type="date" value={globalDateTo} onChange={(event) => setGlobalDateTo(event.target.value)} />
-            </div>
-            <div className="flex items-end justify-start md:justify-end">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setGlobalDateFrom(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
-                  setGlobalDateTo(format(new Date(), 'yyyy-MM-dd'));
-                }}
-              >
-                Reset to Last 30 Days
-              </Button>
-            </div>
-          </div>
-
-          {callActivityReport.invalidRange && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-              Invalid date range. Ensure From date is not later than To date.
-            </div>
-          )}
-
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="border-border/70">
               <CardContent className="pt-3">
@@ -1807,15 +1744,35 @@ const AdminDashboard = () => {
                             <Pencil className="mr-1 h-3 w-3" />
                             Edit
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-destructive/40 text-destructive"
-                            onClick={() => setDeleteConfirm({ userId: entry.id, email: entry.email })}
-                            disabled={entry.id === user?.id}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-destructive/40 text-destructive"
+                                disabled={entry.id === user?.id}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44">
+                              <DropdownMenuLabel>User actions</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => setDeleteConfirm({ userId: entry.id, email: entry.email, mode: 'deactivate' })}
+                              >
+                                <UserX className="mr-2 h-4 w-4" />
+                                Deactivate
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => setDeleteConfirm({ userId: entry.id, email: entry.email, mode: 'delete' })}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete Permanently
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -2016,48 +1973,6 @@ const AdminDashboard = () => {
         </aside>
 
         <main className="min-w-0 lg:overflow-y-auto lg:pr-1 lg:pb-1">
-          <Card className="mb-4 border-border/80 shadow-sm">
-            <CardContent className="pt-4">
-              <div className="grid gap-3 md:grid-cols-4">
-                <div className="space-y-2">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Global From</Label>
-                  <Input type="date" value={globalDateFrom} onChange={(event) => setGlobalDateFrom(event.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Global To</Label>
-                  <Input type="date" value={globalDateTo} onChange={(event) => setGlobalDateTo(event.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Owner Scope</Label>
-                  <Select value={globalOwnerId} onValueChange={setGlobalOwnerId}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Users</SelectItem>
-                      {salesUsers.map((entry) => (
-                        <SelectItem key={entry.id} value={entry.id}>{entry.full_name || entry.email}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-end gap-2">
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      setGlobalDateFrom(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
-                      setGlobalDateTo(format(new Date(), 'yyyy-MM-dd'));
-                      setGlobalOwnerId('all');
-                    }}
-                  >
-                    Reset Filters
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
           {activeSection === 'overview' && renderOverview()}
           {activeSection === 'leads' && renderLeads()}
           {activeSection === 'call-activity' && renderCallActivity()}
@@ -2094,15 +2009,6 @@ const AdminDashboard = () => {
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading="Actions">
-            <CommandItem onSelect={() => {
-              setGlobalDateFrom(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
-              setGlobalDateTo(format(new Date(), 'yyyy-MM-dd'));
-              setGlobalOwnerId('all');
-              setCommandOpen(false);
-            }}>
-              <Filter className="mr-2 h-4 w-4" />
-              Reset Global Filters
-            </CommandItem>
             <CommandItem onSelect={() => { setIsCreateDialogOpen(true); setActiveSection('settings'); setSettingsTab('users'); setCommandOpen(false); }}>
               <Plus className="mr-2 h-4 w-4" />
               Create User
@@ -2177,19 +2083,31 @@ const AdminDashboard = () => {
       <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove User Access</AlertDialogTitle>
+            <AlertDialogTitle>
+              {deleteConfirm?.mode === 'delete' ? 'Delete User Permanently' : 'Deactivate User'}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will deactivate {deleteConfirm?.email} and remove app access. The auth account remains, but the user cannot access the app until role assignment is restored.
+              {deleteConfirm?.mode === 'delete'
+                ? `This will permanently delete ${deleteConfirm?.email} and remove all data associated with this account. This action cannot be undone.`
+                : `This will deactivate ${deleteConfirm?.email} and remove app access. The auth account remains but the user cannot log in until their role is restored.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteConfirm && removeUserAccess.mutate({ userId: deleteConfirm.userId })}
+              onClick={() => {
+                if (!deleteConfirm) return;
+                if (deleteConfirm.mode === 'delete') {
+                  deleteUser.mutate({ userId: deleteConfirm.userId });
+                } else {
+                  removeUserAccess.mutate({ userId: deleteConfirm.userId });
+                }
+              }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteUser.isPending || removeUserAccess.isPending}
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Remove Access
+              {deleteConfirm?.mode === 'delete' ? 'Delete Permanently' : 'Deactivate'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
