@@ -55,19 +55,21 @@ import {
   Trash2,
   Upload,
   Activity,
+  Phone,
   Link2,
   RefreshCw,
   SendHorizontal,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
 import type { Database } from '@/integrations/supabase/types';
 
-type AdminSection = 'leads' | 'marketplace' | 'settings';
+type AdminSection = 'leads' | 'call-activity' | 'marketplace' | 'settings';
 type SettingsTab = 'users' | 'activity';
 type Lead = Database['public']['Tables']['leads']['Row'];
 type LeadActivity = Database['public']['Tables']['lead_activities']['Row'];
+type CallLog = Database['public']['Tables']['call_logs']['Row'];
 type LeadTask = Database['public']['Tables']['lead_tasks']['Row'];
 
 interface Profile {
@@ -133,6 +135,8 @@ const AdminDashboard = () => {
     tasks: false,
     activities: false,
   });
+  const [callDateFrom, setCallDateFrom] = useState(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
+  const [callDateTo, setCallDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   useEffect(() => {
     if (!isLoading && (!user || role !== 'admin')) {
@@ -243,6 +247,20 @@ const AdminDashboard = () => {
     enabled: role === 'admin',
   });
 
+  const { data: callLogs = [] } = useQuery({
+    queryKey: ['admin-call-logs'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('call_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (error) throw error;
+      return data as CallLog[];
+    },
+    enabled: role === 'admin',
+  });
+
   const { data: leadTasks = [] } = useQuery({
     queryKey: ['admin-lead-tasks'],
     queryFn: async () => {
@@ -259,6 +277,143 @@ const AdminDashboard = () => {
 
   const leadMap = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads]);
   const userMap = useMemo(() => new Map(users.map((entry) => [entry.id, entry])), [users]);
+
+  const formatCallDuration = (seconds: number) => {
+    const safeSeconds = Math.max(0, Math.round(seconds || 0));
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const remainingSeconds = safeSeconds % 60;
+    return `${hours}h ${minutes}m ${remainingSeconds}s`;
+  };
+
+  const callActivityReport = useMemo(() => {
+    const from = new Date(`${callDateFrom}T00:00:00`);
+    const to = new Date(`${callDateTo}T23:59:59`);
+    const invalidRange = Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from.getTime() > to.getTime();
+
+    const filtered = invalidRange
+      ? []
+      : callLogs.filter((entry) => {
+          const createdAt = new Date(entry.created_at);
+          const time = createdAt.getTime();
+          if (Number.isNaN(time)) return false;
+          return time >= from.getTime() && time <= to.getTime();
+        });
+
+    const byUser = new Map<string, {
+      user: string;
+      totalCalls: number;
+      connectedCalls: number;
+      incomingCalls: number;
+      outgoingCalls: number;
+      missedCalls: number;
+      durationSeconds: number;
+    }>();
+
+    const byLead = new Map<string, {
+      lead: string;
+      phone: string;
+      owner: string;
+      totalCalls: number;
+      connectedCalls: number;
+      durationSeconds: number;
+      lastCallAt: string;
+    }>();
+
+    const byCalendar = new Map<string, {
+      date: string;
+      totalCalls: number;
+      connectedCalls: number;
+      missedCalls: number;
+      outgoingCalls: number;
+      incomingCalls: number;
+      durationSeconds: number;
+    }>();
+
+    filtered.forEach((entry) => {
+      const userLabel = entry.user_id
+        ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'Assigned user'
+        : 'System/Unassigned';
+      const userKey = entry.user_id || 'unassigned';
+      const userBucket = byUser.get(userKey) || {
+        user: userLabel,
+        totalCalls: 0,
+        connectedCalls: 0,
+        incomingCalls: 0,
+        outgoingCalls: 0,
+        missedCalls: 0,
+        durationSeconds: 0,
+      };
+      userBucket.totalCalls += 1;
+      userBucket.durationSeconds += entry.duration || 0;
+      if ((entry.duration || 0) > 0) userBucket.connectedCalls += 1;
+      if (entry.type === 'incoming') userBucket.incomingCalls += 1;
+      if (entry.type === 'outgoing') userBucket.outgoingCalls += 1;
+      if (entry.type === 'missed') userBucket.missedCalls += 1;
+      byUser.set(userKey, userBucket);
+
+      const leadLabel = entry.lead_id
+        ? leadMap.get(entry.lead_id)?.name || entry.contact_name || entry.phone
+        : entry.contact_name || entry.phone;
+      const leadOwner = entry.lead_id && leadMap.get(entry.lead_id)?.user_id
+        ? userMap.get(leadMap.get(entry.lead_id)?.user_id || '')?.full_name
+          || userMap.get(leadMap.get(entry.lead_id)?.user_id || '')?.email
+          || 'Assigned user'
+        : userLabel;
+      const leadKey = entry.lead_id || entry.phone;
+      const leadBucket = byLead.get(leadKey) || {
+        lead: leadLabel,
+        phone: entry.phone,
+        owner: leadOwner,
+        totalCalls: 0,
+        connectedCalls: 0,
+        durationSeconds: 0,
+        lastCallAt: entry.created_at,
+      };
+      leadBucket.totalCalls += 1;
+      leadBucket.durationSeconds += entry.duration || 0;
+      if ((entry.duration || 0) > 0) leadBucket.connectedCalls += 1;
+      if (new Date(entry.created_at).getTime() > new Date(leadBucket.lastCallAt).getTime()) {
+        leadBucket.lastCallAt = entry.created_at;
+      }
+      byLead.set(leadKey, leadBucket);
+
+      const dayKey = format(new Date(entry.created_at), 'yyyy-MM-dd');
+      const dayBucket = byCalendar.get(dayKey) || {
+        date: dayKey,
+        totalCalls: 0,
+        connectedCalls: 0,
+        missedCalls: 0,
+        outgoingCalls: 0,
+        incomingCalls: 0,
+        durationSeconds: 0,
+      };
+      dayBucket.totalCalls += 1;
+      dayBucket.durationSeconds += entry.duration || 0;
+      if ((entry.duration || 0) > 0) dayBucket.connectedCalls += 1;
+      if (entry.type === 'missed') dayBucket.missedCalls += 1;
+      if (entry.type === 'outgoing') dayBucket.outgoingCalls += 1;
+      if (entry.type === 'incoming') dayBucket.incomingCalls += 1;
+      byCalendar.set(dayKey, dayBucket);
+    });
+
+    const totalDurationSeconds = filtered.reduce((sum, entry) => sum + (entry.duration || 0), 0);
+    const totalConnectedCalls = filtered.filter((entry) => (entry.duration || 0) > 0).length;
+
+    return {
+      invalidRange,
+      filtered,
+      totals: {
+        totalCalls: filtered.length,
+        totalConnectedCalls,
+        totalMissedCalls: filtered.filter((entry) => entry.type === 'missed').length,
+        totalDurationSeconds,
+      },
+      byUser: Array.from(byUser.values()).sort((a, b) => b.totalCalls - a.totalCalls),
+      byLead: Array.from(byLead.values()).sort((a, b) => b.totalCalls - a.totalCalls),
+      byCalendar: Array.from(byCalendar.values()).sort((a, b) => b.date.localeCompare(a.date)),
+    };
+  }, [callDateFrom, callDateTo, callLogs, leadMap, userMap]);
 
   const createUser = useMutation({
     mutationFn: async (data: { email: string; password: string; fullName: string; role: 'admin' | 'sales' }) => {
@@ -566,6 +721,189 @@ const AdminDashboard = () => {
         </Dialog>
       </div>
       <LeadAssignment />
+    </div>
+  );
+
+  const renderCallActivity = () => (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Phone className="h-5 w-5" />
+            Call Activity Reports
+          </CardTitle>
+          <CardDescription>Actionable call reporting by user, by lead, and by calendar day.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>From</Label>
+              <Input type="date" value={callDateFrom} onChange={(event) => setCallDateFrom(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>To</Label>
+              <Input type="date" value={callDateTo} onChange={(event) => setCallDateTo(event.target.value)} />
+            </div>
+            <div className="flex items-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCallDateFrom(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
+                  setCallDateTo(format(new Date(), 'yyyy-MM-dd'));
+                }}
+              >
+                Reset to Last 30 Days
+              </Button>
+            </div>
+          </div>
+
+          {callActivityReport.invalidRange && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              Invalid date range. Ensure From date is not later than To date.
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground">Total Calls</p>
+                <p className="text-2xl font-semibold">{callActivityReport.totals.totalCalls}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground">Connected Calls</p>
+                <p className="text-2xl font-semibold">{callActivityReport.totals.totalConnectedCalls}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground">Missed Calls</p>
+                <p className="text-2xl font-semibold">{callActivityReport.totals.totalMissedCalls}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground">Talk Time</p>
+                <p className="text-xl font-semibold">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            <Card className="xl:col-span-1">
+              <CardHeader>
+                <CardTitle className="text-base">By User</CardTitle>
+                <CardDescription>Who is handling and connecting the most calls.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-[420px] overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>User</TableHead>
+                        <TableHead>Calls</TableHead>
+                        <TableHead>Connected</TableHead>
+                        <TableHead>Duration</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {callActivityReport.byUser.map((entry) => (
+                        <TableRow key={entry.user}>
+                          <TableCell className="font-medium">{entry.user}</TableCell>
+                          <TableCell>{entry.totalCalls}</TableCell>
+                          <TableCell>{entry.connectedCalls}</TableCell>
+                          <TableCell>{formatCallDuration(entry.durationSeconds)}</TableCell>
+                        </TableRow>
+                      ))}
+                      {callActivityReport.byUser.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground">No call data in selected range.</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="xl:col-span-1">
+              <CardHeader>
+                <CardTitle className="text-base">By Lead</CardTitle>
+                <CardDescription>Lead-level call intensity, ownership, and recency.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-[420px] overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Lead / Contact</TableHead>
+                        <TableHead>Owner</TableHead>
+                        <TableHead>Calls</TableHead>
+                        <TableHead>Last Call</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {callActivityReport.byLead.map((entry) => (
+                        <TableRow key={`${entry.lead}-${entry.phone}`}>
+                          <TableCell>
+                            <p className="font-medium">{entry.lead}</p>
+                            <p className="text-xs text-muted-foreground">{entry.phone}</p>
+                          </TableCell>
+                          <TableCell>{entry.owner}</TableCell>
+                          <TableCell>{entry.totalCalls}</TableCell>
+                          <TableCell>{format(new Date(entry.lastCallAt), 'dd MMM yyyy, h:mm a')}</TableCell>
+                        </TableRow>
+                      ))}
+                      {callActivityReport.byLead.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground">No lead call data in selected range.</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="xl:col-span-1">
+              <CardHeader>
+                <CardTitle className="text-base">By Calendar</CardTitle>
+                <CardDescription>Daily call trend for planning and monitoring.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-[420px] overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Total</TableHead>
+                        <TableHead>Connected</TableHead>
+                        <TableHead>Missed</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {callActivityReport.byCalendar.map((entry) => (
+                        <TableRow key={entry.date}>
+                          <TableCell className="font-medium">{format(new Date(entry.date), 'dd MMM yyyy')}</TableCell>
+                          <TableCell>{entry.totalCalls}</TableCell>
+                          <TableCell>{entry.connectedCalls}</TableCell>
+                          <TableCell>{entry.missedCalls}</TableCell>
+                        </TableRow>
+                      ))}
+                      {callActivityReport.byCalendar.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground">No daily call trend data in selected range.</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 
@@ -908,7 +1246,7 @@ const AdminDashboard = () => {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-6 py-6 md:grid-cols-[250px_minmax(0,1fr)]">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-6 py-6 md:h-[calc(100vh-110px)] md:grid-cols-[250px_minmax(0,1fr)]">
         <aside className="h-fit rounded-2xl border bg-card p-3 md:sticky md:top-24">
           <nav className="space-y-1">
             <button
@@ -917,6 +1255,13 @@ const AdminDashboard = () => {
             >
               <Users className="h-4 w-4" />
               Manage Leads
+            </button>
+            <button
+              onClick={() => setActiveSection('call-activity')}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ${activeSection === 'call-activity' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            >
+              <Phone className="h-4 w-4" />
+              Call Activity
             </button>
             <button
               onClick={() => setActiveSection('marketplace')}
@@ -935,8 +1280,9 @@ const AdminDashboard = () => {
           </nav>
         </aside>
 
-        <main className="min-w-0">
+        <main className="min-w-0 md:overflow-y-auto md:pr-2">
           {activeSection === 'leads' && renderLeads()}
+          {activeSection === 'call-activity' && renderCallActivity()}
           {activeSection === 'marketplace' && renderMarketplace()}
           {activeSection === 'settings' && renderSettings()}
         </main>
