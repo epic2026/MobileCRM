@@ -11,7 +11,7 @@ const AIAgentButton = ({ onClick, isActive }: AIAgentButtonProps) => {
     <div
       className="fixed z-40"
       style={{
-        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 76px)',
+        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 118px)',
         right: '16px',
       }}
     >

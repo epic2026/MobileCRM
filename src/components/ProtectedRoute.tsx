@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -24,46 +24,33 @@ const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
     }
   }, [isLoading, user]);
 
-  useEffect(() => {
-    if (!isLoading && !isRoleLoading) {
-      if (!user) {
-        // Not logged in - redirect to appropriate login
-        if (requiredRole === 'admin') {
-          navigate('/admin/login');
-        } else {
-          navigate('/auth');
-        }
-        return;
-      }
+  const redirectTarget = useMemo(() => {
+    if (isLoading || isRoleLoading) return null;
 
-      // Admin users should ONLY access admin routes
-      if (role === 'admin') {
-        if (requiredRole !== 'admin') {
-          // Admin trying to access sales app - redirect to admin dashboard
-          navigate('/admin');
-        }
-        return;
-      }
-
-      // Sales users should ONLY access sales routes
-      if (role === 'sales') {
-        if (requiredRole === 'admin') {
-          // Sales user trying to access admin - redirect to sales app
-          navigate('/');
-        }
-        return;
-      }
-
-      // User has no role assigned yet - check what they're trying to access
-      if (!role) {
-        if (requiredRole === 'admin') {
-          navigate('/admin/login');
-        } else {
-          navigate('/auth');
-        }
-      }
+    if (!user) {
+      return requiredRole === 'admin' ? '/admin/login' : '/auth';
     }
-  }, [user, role, isLoading, isRoleLoading, requiredRole, navigate]);
+
+    if (role === 'admin' && requiredRole !== 'admin') {
+      return '/admin';
+    }
+
+    if (role === 'sales' && requiredRole === 'admin') {
+      return '/';
+    }
+
+    if (!role) {
+      return requiredRole === 'admin' ? '/admin/login' : '/auth';
+    }
+
+    return null;
+  }, [isLoading, isRoleLoading, user, role, requiredRole]);
+
+  useEffect(() => {
+    if (redirectTarget) {
+      navigate(redirectTarget, { replace: true });
+    }
+  }, [redirectTarget, navigate]);
 
   if (isLoading || isRoleLoading) {
     return (
@@ -73,23 +60,18 @@ const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
     );
   }
 
-  if (!user) {
-    return null;
-  }
-
-  // Admin can only access admin routes
-  if (role === 'admin' && requiredRole !== 'admin') {
-    return null;
-  }
-
-  // Sales can only access sales routes
-  if (role === 'sales' && requiredRole === 'admin') {
-    return null;
-  }
-
-  // No role - deny access
-  if (!role) {
-    return null;
+  if (
+    !!redirectTarget ||
+    !user ||
+    !role ||
+    (role === 'admin' && requiredRole !== 'admin') ||
+    (role === 'sales' && requiredRole === 'admin')
+  ) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-pulse text-muted-foreground">Redirecting...</div>
+      </div>
+    );
   }
 
   return <>{children}</>;

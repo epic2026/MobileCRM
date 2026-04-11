@@ -12,16 +12,17 @@ import { isNativeApp } from '@/services/nativePlugins';
 interface CallRecordingStartupProps {
   /** Increment this number to trigger a manual import (independent of startup auto-import). */
   manualImportTrigger?: number;
+  enableAutoImport?: boolean;
 }
 
-const CallRecordingStartup = ({ manualImportTrigger = 0 }: CallRecordingStartupProps) => {
+const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true }: CallRecordingStartupProps) => {
   const hasRunRef = useRef(false);
   const { user } = useAuth();
   const { uploadRecording, createRecording, analyzeRecording } = useCallRecordings();
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!isNativeApp() || !user || hasRunRef.current) return;
+    if (!enableAutoImport || !isNativeApp() || !user || hasRunRef.current) return;
 
     let timeoutId: number | undefined;
     let frameId: number | undefined;
@@ -97,7 +98,7 @@ const CallRecordingStartup = ({ manualImportTrigger = 0 }: CallRecordingStartupP
         window.clearTimeout(timeoutId);
       }
     };
-  }, [user?.id]);
+  }, [enableAutoImport, user?.id]);
 
   // Manual import trigger (called by AI agent or user action)
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { Settings, Target, Bell, ListTodo } from 'lucide-react';
+import { Settings, Target, Phone, ListTodo } from 'lucide-react';
 
 interface BottomNavProps {
   activeTab: string;
@@ -8,14 +8,18 @@ interface BottomNavProps {
 const navItems = [
   { id: 'leads', icon: Target, label: 'Leads' },
   { id: 'tasks', icon: ListTodo, label: 'Tasks' },
-  { id: 'notifications', icon: Bell, label: 'Notifications' },
+  { id: 'activity', icon: Phone, label: 'Activity' },
   { id: 'settings', icon: Settings, label: 'Settings' },
 ];
 
 const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 bg-card/95 border-t border-border z-50 pb-[env(safe-area-inset-bottom)]"
+      className="fixed left-0 right-0 z-50 border-t border-border bg-card/95 shadow-lg"
+      style={{
+        bottom: 'max(env(safe-area-inset-bottom, 0px), 56px)',
+        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 4px)',
+      }}
     >
       <div className="w-full max-w-md mx-auto flex justify-around items-center h-16 px-2">
         {navItems.map((item) => {

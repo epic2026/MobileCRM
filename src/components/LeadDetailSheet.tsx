@@ -28,6 +28,13 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -102,7 +109,7 @@ const recordingSourceLabel = (recording: { file_path: string; transcription: str
 };
 
 const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusChange }: LeadDetailSheetProps) => {
-  const { tasks, createTask } = useLeadTasks(lead?.id ?? null);
+  const { tasks, createTask, updateTask } = useLeadTasks(lead?.id ?? null);
   const { activities, createActivity } = useLeadActivities(lead?.id ?? null);
   const { recordings } = useCallRecordings(lead?.id ?? null);
 
@@ -185,6 +192,10 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
     setIsAddingActivity(false);
   };
 
+  const handleTaskStatusChange = (taskId: string, status: TaskStatus) => {
+    updateTask.mutate({ id: taskId, status });
+  };
+
   // Generate AI insights based on activities and lead data
   const insights = useMemo(() => {
     if (!lead) {
@@ -249,6 +260,91 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
           },
         ];
   }, [activities, tasks, lead]);
+
+  const closureScore = useMemo(() => {
+    if (!lead) {
+      return { score: 0, reasons: [] as Array<{ text: string; points: number; tone: 'positive' | 'negative' | 'neutral' }> };
+    }
+
+    const statusBaseScore: Record<LeadStatus, number> = {
+      new: 18,
+      contacted: 35,
+      qualified: 55,
+      proposal: 72,
+      negotiation: 84,
+      won: 99,
+      lost: 4,
+    };
+
+    const callCount = activities.filter((activity) => activity.type === 'call').length;
+    const pendingTaskCount = tasks.filter((task) => task.status === 'pending').length;
+    const lastActivityTs = activities[0] ? new Date(activities[0].created_at).getTime() : null;
+    const inactivityDays = lastActivityTs ? Math.floor((Date.now() - lastActivityTs) / (1000 * 60 * 60 * 24)) : null;
+
+    const reasons: Array<{ text: string; points: number; tone: 'positive' | 'negative' | 'neutral' }> = [];
+    let score = statusBaseScore[lead.status];
+
+    reasons.push({
+      text: `Current stage: ${statusLabels[lead.status]}`,
+      points: statusBaseScore[lead.status],
+      tone: lead.status === 'lost' ? 'negative' : lead.status === 'new' ? 'neutral' : 'positive',
+    });
+
+    if (callCount > 0) {
+      const points = Math.min(12, callCount * 3);
+      score += points;
+      reasons.push({ text: `${callCount} call activity logged`, points, tone: 'positive' });
+    } else {
+      score -= 8;
+      reasons.push({ text: 'No call activity yet', points: -8, tone: 'negative' });
+    }
+
+    if (inactivityDays !== null) {
+      if (inactivityDays <= 2) {
+        score += 8;
+        reasons.push({ text: 'Recent engagement in last 48 hours', points: 8, tone: 'positive' });
+      } else if (inactivityDays <= 7) {
+        score += 3;
+        reasons.push({ text: 'Active in the last week', points: 3, tone: 'positive' });
+      } else if (inactivityDays > 14) {
+        score -= 12;
+        reasons.push({ text: `${inactivityDays} days without activity`, points: -12, tone: 'negative' });
+      }
+    } else {
+      score -= 5;
+      reasons.push({ text: 'No activity history available', points: -5, tone: 'negative' });
+    }
+
+    if (pendingTaskCount === 0) {
+      score += 4;
+      reasons.push({ text: 'No pending follow-ups', points: 4, tone: 'positive' });
+    } else if (pendingTaskCount >= 4) {
+      score -= 8;
+      reasons.push({ text: `${pendingTaskCount} pending tasks are blocking progress`, points: -8, tone: 'negative' });
+    } else {
+      reasons.push({ text: `${pendingTaskCount} pending task(s) in queue`, points: 0, tone: 'neutral' });
+    }
+
+    if (lead.value && lead.value >= 100000) {
+      score += 6;
+      reasons.push({ text: 'High ticket opportunity value', points: 6, tone: 'positive' });
+    } else if (lead.value && lead.value >= 25000) {
+      score += 3;
+      reasons.push({ text: 'Solid opportunity value', points: 3, tone: 'positive' });
+    }
+
+    if (lead.status === 'lost') {
+      score = Math.min(score, 10);
+    }
+    if (lead.status === 'won') {
+      score = Math.max(score, 95);
+    }
+
+    return {
+      score: Math.max(0, Math.min(100, Math.round(score))),
+      reasons: reasons.slice(0, 6),
+    };
+  }, [activities, lead, tasks]);
 
   if (!lead) return null;
 
@@ -522,7 +618,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                       transition={{ delay: index * 0.05 }}
                       className="p-3 glass-card"
                     >
-                      <div className="flex items-start justify-between">
+                      <div className="flex items-start justify-between gap-3">
                         <div className="flex-1">
                           <p className="text-sm font-medium text-foreground">{task.title}</p>
                           {task.description && (
@@ -535,9 +631,17 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                             </p>
                           )}
                         </div>
-                        <Badge className={`text-[10px] ${taskStatusColors[task.status]}`}>
-                          {task.status.replace('_', ' ')}
-                        </Badge>
+                        <Select value={task.status} onValueChange={(value: TaskStatus) => handleTaskStatusChange(task.id, value)}>
+                          <SelectTrigger className={`h-7 w-[128px] border text-[10px] ${taskStatusColors[task.status]}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="in_progress">In Progress</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="cancelled">Cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </motion.div>
                   ))
@@ -578,30 +682,36 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
               <div className="mt-6 p-4 glass-card bg-gradient-to-br from-primary/10 to-accent/10">
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles className="w-4 h-4 text-accent" />
-                  <span className="text-sm font-medium text-foreground">Lead Score</span>
+                  <span className="text-sm font-medium text-foreground">AI Closure Score</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
-                      animate={{
-                        width: `${Math.min(
-                          100,
-                          (lead.status === 'won' ? 100 : lead.status === 'negotiation' ? 80 : lead.status === 'proposal' ? 60 : lead.status === 'qualified' ? 40 : 20) +
-                            (activities.length * 2)
-                        )}%`,
-                      }}
+                      animate={{ width: `${closureScore.score}%` }}
                       transition={{ duration: 1 }}
                       className="h-full bg-gradient-to-r from-primary to-accent"
                     />
                   </div>
-                  <span className="text-sm font-bold text-accent">
-                    {Math.min(
-                      100,
-                      (lead.status === 'won' ? 100 : lead.status === 'negotiation' ? 80 : lead.status === 'proposal' ? 60 : lead.status === 'qualified' ? 40 : 20) +
-                        (activities.length * 2)
-                    )}
-                  </span>
+                  <span className="text-sm font-bold text-accent">{closureScore.score}</span>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {closureScore.reasons.map((reason, index) => (
+                    <p key={index} className="text-xs text-muted-foreground">
+                      <span
+                        className={`mr-1 font-medium ${
+                          reason.tone === 'positive'
+                            ? 'text-emerald-500'
+                            : reason.tone === 'negative'
+                            ? 'text-rose-500'
+                            : 'text-muted-foreground'
+                        }`}
+                      >
+                        {reason.points > 0 ? `+${reason.points}` : reason.points}
+                      </span>
+                      {reason.text}
+                    </p>
+                  ))}
                 </div>
               </div>
             </TabsContent>

@@ -113,6 +113,9 @@ interface LightweightLead {
   notes: string | null;
 }
 
+const isLikelyJwt = (token: string | null | undefined) =>
+  typeof token === 'string' && token.split('.').length === 3;
+
 const statusAliases: Record<string, LeadStatus> = {
   new: 'new',
   contacted: 'contacted',
@@ -419,14 +422,26 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
       throw new Error('Authentication failed. No active session found.');
     }
 
-    const { data: currentUser, error: userError } = await supabase.auth.getUser();
-    if (!userError && currentUser.user) {
-      return currentSession.access_token;
+    if (!isLikelyJwt(currentSession.access_token)) {
+      const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError || !isLikelyJwt(refreshedData.session?.access_token)) {
+        throw new Error('Authentication failed. Invalid session token.');
+      }
+      return refreshedData.session.access_token;
     }
 
-    console.warn('⚠️ Session token may be stale, attempting refresh...', userError?.message);
+    const expiresAtMs = (currentSession.expires_at ?? 0) * 1000;
+    const shouldRefresh = !expiresAtMs || expiresAtMs - Date.now() < 60_000;
+    if (!shouldRefresh) {
+      const { data: currentUser, error: userError } = await supabase.auth.getUser();
+      if (!userError && currentUser.user) {
+        return currentSession.access_token;
+      }
+    }
+
+    console.warn('⚠️ Session token may be stale, attempting refresh...');
     const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
-    if (refreshError || !refreshedData.session?.access_token) {
+    if (refreshError || !isLikelyJwt(refreshedData.session?.access_token)) {
       console.error('❌ Session refresh failed:', refreshError?.message || 'No refreshed session');
       throw new Error('Authentication failed. Sign out and log back in before retrying ARIA.');
     }
@@ -461,11 +476,11 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
       let response = await makeRequest(accessToken);
 
       if (response.status === 401) {
-        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-        if (refreshError || !refreshed.session?.access_token) {
+        const retryToken = await getValidAccessToken();
+        if (!isLikelyJwt(retryToken)) {
           throw new Error('Authentication failed. Sign out and log back in before retrying ARIA.');
         }
-        response = await makeRequest(refreshed.session.access_token);
+        response = await makeRequest(retryToken);
       }
 
       const responseText = await response.text();
@@ -491,7 +506,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
 
       return parsed as { message?: string; action?: unknown; suggestions?: unknown };
     },
-    [],
+    [getValidAccessToken],
   );
 
   const sendMessage = useCallback(

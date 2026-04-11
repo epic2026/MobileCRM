@@ -8,9 +8,15 @@ const MobileLayout = ({ children }: MobileLayoutProps) => {
   return (
     <div
       className="min-h-[100dvh] w-full overflow-x-hidden bg-background"
-      style={{ paddingTop: 'max(env(safe-area-inset-top), 24px)' }}
+      style={{
+        paddingTop: 'max(env(safe-area-inset-top), 24px)',
+        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 16px)',
+      }}
     >
-      <div className="w-full max-w-md mx-auto min-h-[100dvh] relative overflow-x-hidden">
+      <div
+        className="w-full max-w-md mx-auto min-h-[100dvh] relative overflow-x-hidden"
+        style={{ paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 56px) + 120px)' }}
+      >
         {children}
       </div>
     </div>

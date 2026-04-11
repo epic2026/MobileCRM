@@ -5,6 +5,9 @@ import { isNativeApp } from '@/services/nativePlugins';
 
 type AppRole = 'admin' | 'sales' | null;
 
+const isLikelyJwt = (token: string | null | undefined) =>
+  typeof token === 'string' && token.split('.').length === 3;
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -52,6 +55,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const applyValidatedSession = async (incomingSession: Session | null) => {
     if (!incomingSession) {
       clearAuthState();
+      return;
+    }
+
+    if (!isLikelyJwt(incomingSession.access_token)) {
+      console.warn('⚠️ Cached session token is invalid, attempting refresh...');
+      const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError || !refreshedData.session || !refreshedData.user || !isLikelyJwt(refreshedData.session.access_token)) {
+        await supabase.auth.signOut();
+        clearAuthState();
+        return;
+      }
+
+      setSession(refreshedData.session);
+      setUser(refreshedData.user);
+      setRole(await fetchUserRole(refreshedData.user.id));
       return;
     }
 

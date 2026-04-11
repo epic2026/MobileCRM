@@ -6,16 +6,17 @@ import MobileLayout from '@/components/MobileLayout';
 import BottomNav from '@/components/BottomNav';
 import LeadsPanel from '@/components/LeadsPanel';
 import TasksPanel from '@/components/TasksPanel';
-import NotificationsPanel from '@/components/NotificationsPanel';
+import CallActivity from '@/components/CallActivity';
 import CRMIntegrations from '@/components/CRMIntegrations';
 import SettingsPanel from '@/components/SettingsPanel';
 import CallRecordingStartup from '@/components/CallRecordingStartup';
+import AppErrorBoundary from '@/components/AppErrorBoundary';
 import AIAgentButton from '@/components/AIAgent/AIAgentButton';
 import AIAgentSheet from '@/components/AIAgent/AIAgentSheet';
 import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
-  const [activeTab, setActiveTab] = useState('tasks');
+  const [activeTab, setActiveTab] = useState('leads');
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [manualImportTrigger, setManualImportTrigger] = useState(0);
   const { toast } = useToast();
@@ -109,11 +110,13 @@ const Index = () => {
   return (
     <MobileLayout>
       <CallRecordingStartup manualImportTrigger={manualImportTrigger} />
-      {activeTab === 'leads' && <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />}
-      {activeTab === 'tasks' && <TasksPanel />}
-      {activeTab === 'notifications' && <NotificationsPanel />}
-      {activeTab === 'integrations' && <CRMIntegrations />}
-      {activeTab === 'settings' && <SettingsPanel />}
+      <AppErrorBoundary key={activeTab} fallbackTitle="Screen failed to load">
+        {activeTab === 'leads' && <LeadsPanel onCall={handleCall} onWhatsApp={handleWhatsApp} />}
+        {activeTab === 'tasks' && <TasksPanel />}
+        {activeTab === 'activity' && <CallActivity onCall={(phone, name) => handleCall(phone, name)} />}
+        {activeTab === 'integrations' && <CRMIntegrations />}
+        {activeTab === 'settings' && <SettingsPanel />}
+      </AppErrorBoundary>
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
       <AIAgentButton
         onClick={() => setIsAgentOpen(true)}
