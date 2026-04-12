@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAIAgent, AgentActionType } from '@/hooks/useAIAgent';
 import { cn } from '@/lib/utils';
 import { isNativeApp, MicrophonePermissionPlugin, NativeSpeechRecognitionPlugin } from '@/services/nativePlugins';
+import { TextToSpeech } from '@capacitor-community/text-to-speech';
 
 interface SpeechRecognitionInstance {
   continuous: boolean;
@@ -38,21 +39,67 @@ interface AIAgentSheetProps {
   onImportRecordings: () => void;
 }
 
+const pickFemaleVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null =>
+  voices.find((v) => /female/i.test(v.name)) ??
+  voices.find((v) => /\b(samantha|victoria|karen|moira|veena|fiona|tessa|zira|google us english)\b/i.test(v.name)) ??
+  voices.find((v) => v.lang.startsWith('en')) ??
+  voices[0] ??
+  null;
+
 const speakAriaResponse = (text: string): void => {
-  if (!("speechSynthesis" in window)) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
+  if (isNativeApp()) {
+    // Native Android: use Capacitor TTS plugin — reliable, no WebView limitations
+    void TextToSpeech.speak({
+      text,
+      lang: 'en-US',
+      rate: 1.0,
+      pitch: 1.1,
+      volume: 1.0,
+      category: 'ambient',
+    });
+    return;
+  }
+
+  // Web browser fallback
+  if (!('speechSynthesis' in window)) return;
+
+  const doSpeak = (voices: SpeechSynthesisVoice[]) => {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = pickFemaleVoice(voices);
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+    }
+    utterance.pitch = 1.1;
+    utterance.rate = 1.0;
+    window.speechSynthesis.speak(utterance);
+  };
+
   const voices = window.speechSynthesis.getVoices();
-  const femaleVoice =
-    voices.find((v) => /female/i.test(v.name)) ??
-    voices.find((v) => /\b(samantha|victoria|karen|moira|veena|fiona|tessa|zira)\b/i.test(v.name)) ??
-    voices.find((v) => v.lang.startsWith('en')) ??
-    null;
-  if (femaleVoice) utterance.voice = femaleVoice;
-  utterance.pitch = 1.1;
-  utterance.rate = 1.0;
-  utterance.lang = 'en-IN';
-  window.speechSynthesis.speak(utterance);
+  if (voices.length > 0) {
+    doSpeak(voices);
+  } else {
+    const onVoicesChanged = () => {
+      window.speechSynthesis.onvoiceschanged = null;
+      doSpeak(window.speechSynthesis.getVoices());
+    };
+    window.speechSynthesis.onvoiceschanged = onVoicesChanged;
+    window.setTimeout(() => {
+      if (window.speechSynthesis.onvoiceschanged === onVoicesChanged) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+      doSpeak(window.speechSynthesis.getVoices());
+    }, 500);
+  }
+};
+
+const stopSpeaking = (): void => {
+  if (isNativeApp()) {
+    void TextToSpeech.stop();
+  } else {
+    window.speechSynthesis?.cancel();
+  }
 };
 
 const QUICK_PROMPTS = [
@@ -157,7 +204,7 @@ const AIAgentSheet = ({
     if (!isOpen) {
       autoPromptedThisOpenRef.current = false;
       isVoiceStartPendingRef.current = false;
-      window.speechSynthesis?.cancel();
+      stopSpeaking();
       spokenMsgIdRef.current = null;
       return;
     }
