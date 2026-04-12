@@ -96,6 +96,7 @@ import {
   AlertTriangle,
   CircleAlert,
   CircleCheck,
+  Download,
 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
@@ -898,6 +899,232 @@ const AdminDashboard = () => {
     }
   };
 
+  const exportCsv = (filename: string, headers: string[], rows: Array<Array<string | number | null | undefined>>) => {
+    const escapeValue = (value: string | number | null | undefined) => {
+      const stringValue = String(value ?? '');
+      if (/[,"\n]/.test(stringValue)) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map((cell) => escapeValue(cell)).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = window.document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleExportCurrentView = () => {
+    if (activeSection === 'leads') {
+      exportCsv(
+        'admin-leads.csv',
+        ['Name', 'Company', 'Status', 'Owner', 'Phone', 'Email', 'Created'],
+        leadRows.map((lead) => [
+          lead.name,
+          lead.company || '',
+          lead.status,
+          lead.user_id ? userMap.get(lead.user_id)?.full_name || userMap.get(lead.user_id)?.email || 'Assigned user' : 'Unassigned',
+          lead.phone,
+          lead.email || '',
+          format(new Date(lead.created_at), 'yyyy-MM-dd HH:mm'),
+        ]),
+      );
+      return;
+    }
+
+    if (activeSection === 'call-activity') {
+      exportCsv(
+        'admin-call-activity.csv',
+        ['Time', 'User', 'Lead/Contact', 'Type', 'Duration Seconds', 'Outcome'],
+        callActivityReport.filtered.map((entry) => [
+          format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm'),
+          entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System',
+          entry.lead_id ? leadMap.get(entry.lead_id)?.name || entry.contact_name || entry.phone : entry.contact_name || entry.phone,
+          entry.type,
+          entry.duration || 0,
+          entry.outcome || '',
+        ]),
+      );
+      return;
+    }
+
+    if (activeSection === 'settings') {
+      if (settingsTab === 'users') {
+        exportCsv(
+          'admin-users.csv',
+          ['Name', 'Email', 'Role', 'Status', 'Created'],
+          users.map((entry) => [
+            entry.full_name || 'No name',
+            entry.email,
+            entry.role || 'No role',
+            entry.is_active ? 'Active' : 'Inactive',
+            format(new Date(entry.created_at), 'yyyy-MM-dd'),
+          ]),
+        );
+      } else {
+        exportCsv(
+          'admin-activity-log.csv',
+          ['Time', 'Activity', 'Lead', 'User'],
+          filteredActivities.map((entry) => [
+            format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm'),
+            entry.title,
+            entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A',
+            entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System',
+          ]),
+        );
+      }
+      return;
+    }
+
+    exportCsv(
+      'admin-overview.csv',
+      ['Metric', 'Value'],
+      [
+        ['Connect Rate', `${dashboardInsights.connectRate}%`],
+        ['Overdue Tasks', dashboardInsights.overdueTasks],
+        ['Calls Without Follow-up', dashboardInsights.callsWithoutFollowup],
+        ['Stale Leads', dashboardInsights.staleLeads],
+        ['Connected Calls', dashboardInsights.connectedCalls],
+      ],
+    );
+  };
+
+  const navigationItems: Array<{ id: AdminSection; label: string; caption: string; icon: typeof LayoutDashboard }> = [
+    { id: 'overview', label: 'Overview', caption: 'Workspace pulse', icon: LayoutDashboard },
+    { id: 'leads', label: 'Projects', caption: 'Lead pipeline', icon: Users },
+    { id: 'call-activity', label: 'Reports', caption: 'Call insights', icon: Activity },
+    { id: 'marketplace', label: 'Integrations', caption: 'CRM sync', icon: Link2 },
+    { id: 'settings', label: 'Settings', caption: 'Access control', icon: Settings },
+  ];
+
+  const activeSectionTitle =
+    activeSection === 'overview'
+      ? 'Admin Dashboard'
+      : activeSection === 'leads'
+        ? 'Projects'
+        : activeSection === 'call-activity'
+          ? 'Reports'
+          : activeSection === 'marketplace'
+            ? 'Integrations'
+            : 'Settings';
+
+  const activeSectionDescription =
+    activeSection === 'overview'
+      ? 'Operational visibility across leads, calls, integrations, and user governance.'
+      : activeSection === 'leads'
+        ? 'Browse, filter, import, and assign lead records from one workspace.'
+        : activeSection === 'call-activity'
+          ? 'Inspect team calling performance, quality, and raw logs.'
+          : activeSection === 'marketplace'
+            ? 'Manage CRM connectivity, sync jobs, and connector health.'
+            : 'Control user lifecycle, permissions, and audit visibility.';
+
+  const activeSectionCount =
+    activeSection === 'overview'
+      ? `${leads.length + users.length + callLogs.length} records monitored`
+      : activeSection === 'leads'
+        ? `${leadRows.length} leads visible`
+        : activeSection === 'call-activity'
+          ? `${callActivityReport.filtered.length} calls in report`
+          : activeSection === 'marketplace'
+            ? `${syncLogs.length} sync runs tracked`
+            : settingsTab === 'users'
+              ? `${users.length} users managed`
+              : `${filteredActivities.length} activity events`;
+
+  const primaryActionLabel =
+    activeSection === 'settings'
+      ? 'Add User'
+      : activeSection === 'marketplace'
+        ? (zohoStatus?.connected ? 'Reconnect CRM' : 'Connect CRM')
+        : activeSection === 'call-activity'
+          ? 'Open Logs'
+          : 'Quick Actions';
+
+  const handlePrimaryAction = () => {
+    if (activeSection === 'settings') {
+      setIsCreateDialogOpen(true);
+      setSettingsTab('users');
+      return;
+    }
+
+    if (activeSection === 'marketplace') {
+      void handleConnectZoho();
+      return;
+    }
+
+    if (activeSection === 'call-activity') {
+      setCallReportView('logs');
+      return;
+    }
+
+    setCommandOpen(true);
+  };
+
+  const getLeadProgressValue = (status: string | null) => {
+    switch ((status || '').toLowerCase()) {
+      case 'new':
+        return 18;
+      case 'contacted':
+        return 34;
+      case 'qualified':
+        return 56;
+      case 'proposal':
+        return 74;
+      case 'negotiation':
+        return 86;
+      case 'won':
+        return 100;
+      case 'lost':
+        return 12;
+      default:
+        return 24;
+    }
+  };
+
+  const getLeadStatusClasses = (status: string | null) => {
+    switch ((status || '').toLowerCase()) {
+      case 'won':
+        return {
+          badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+          progress: 'bg-emerald-200',
+          tail: 'bg-emerald-50',
+        };
+      case 'lost':
+        return {
+          badge: 'bg-rose-100 text-rose-700 border-rose-200',
+          progress: 'bg-rose-200',
+          tail: 'bg-rose-50',
+        };
+      case 'proposal':
+      case 'negotiation':
+        return {
+          badge: 'bg-violet-100 text-violet-700 border-violet-200',
+          progress: 'bg-violet-100',
+          tail: 'bg-violet-50',
+        };
+      case 'qualified':
+        return {
+          badge: 'bg-sky-100 text-sky-700 border-sky-200',
+          progress: 'bg-sky-100',
+          tail: 'bg-emerald-50',
+        };
+      default:
+        return {
+          badge: 'bg-slate-100 text-slate-700 border-slate-200',
+          progress: 'bg-sky-50',
+          tail: 'bg-emerald-50',
+        };
+    }
+  };
+
   const renderOverview = () => (
     <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
@@ -1059,30 +1286,9 @@ const AdminDashboard = () => {
   const renderLeads = () => (
     <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
-        <CardHeader className="flex flex-col gap-3 border-b bg-muted/20 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>Lead Operations</CardTitle>
-            <CardDescription>Import, assign, and manage lead pipeline ownership across your sales team.</CardDescription>
-          </div>
-          <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="outline" className="whitespace-nowrap">
-                <Upload className="mr-2 h-4 w-4" />
-                Import Leads
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Import Leads</DialogTitle>
-                <DialogDescription>Upload CSV/Excel and import leads for assignment.</DialogDescription>
-              </DialogHeader>
-              <LeadImport />
-            </DialogContent>
-          </Dialog>
-        </CardHeader>
         <CardContent className="pt-4">
           <div className="space-y-4">
-            <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+            <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -1110,6 +1316,21 @@ const AdminDashboard = () => {
                 <Filter className="mr-2 h-4 w-4" />
                 Clear
               </Button>
+              <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="whitespace-nowrap">
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import Leads
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+                  <DialogHeader>
+                    <DialogTitle>Import Leads</DialogTitle>
+                    <DialogDescription>Upload CSV/Excel and import leads for assignment.</DialogDescription>
+                  </DialogHeader>
+                  <LeadImport />
+                </DialogContent>
+              </Dialog>
             </div>
 
             {selectedLeadIds.length > 0 && (
@@ -1867,8 +2088,10 @@ const AdminDashboard = () => {
 
   if (isLoading || usersLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="animate-pulse text-muted-foreground">Loading admin panel...</div>
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb]">
+        <div className="rounded-3xl border border-slate-200 bg-white px-8 py-6 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.35)]">
+          <div className="animate-pulse text-sm font-medium text-slate-500">Loading admin panel...</div>
+        </div>
       </div>
     );
   }
@@ -1878,107 +2101,162 @@ const AdminDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="mx-auto flex w-full max-w-[1480px] items-start justify-between gap-3 px-5 py-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-              <Shield className="h-6 w-6 text-primary" />
+    <div className="min-h-screen bg-[#f5f7fb] text-slate-900" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <div className="mx-auto w-full max-w-[1540px] px-4 py-4 lg:px-5">
+        <div className={`grid grid-cols-1 gap-4 ${sidebarCollapsed ? 'lg:grid-cols-[78px_minmax(0,1fr)]' : 'lg:grid-cols-[272px_minmax(0,1fr)]'}`}>
+          <aside className="relative rounded-[28px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.28)] backdrop-blur">
+            <button
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              className="absolute -right-3 top-1/2 hidden h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-[#2d54b5] text-white shadow-lg transition hover:bg-[#23459a] lg:flex"
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </button>
+
+            <div className={`mb-8 flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#2f64d6] via-[#2854c5] to-[#173785] text-white shadow-[0_18px_35px_-18px_rgba(37,99,235,0.9)]">
+                <Shield className="h-6 w-6" />
+              </div>
+              {!sidebarCollapsed && (
+                <div className="min-w-0">
+                  <p className="truncate text-xl font-semibold tracking-tight text-slate-900">Admin Dashboard</p>
+                  <p className="truncate text-xs font-medium uppercase tracking-[0.24em] text-slate-400">Control Center</p>
+                </div>
+              )}
             </div>
-            <div className="min-w-0">
-              <h1 className="truncate text-xl font-bold text-foreground">Admin Control Center</h1>
-              <p className="truncate text-sm text-muted-foreground">Enterprise workspace for overview, lead ops, call intelligence, CRM sync, and governance</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" className="hidden md:inline-flex" onClick={() => setCommandOpen(true)}>
-              <Search className="mr-2 h-4 w-4" />
-              Search
-              <CommandShortcut>⌘K</CommandShortcut>
-            </Button>
-            <Button variant="outline" size="icon" aria-label="Notifications">
-              <Bell className="h-4 w-4" />
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">{user.email?.split('@')[0] || 'Admin'}</Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel>Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setActiveSection('settings')}>Settings</DropdownMenuItem>
-                <DropdownMenuItem onClick={handleSignOut}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign Out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+
+            {!sidebarCollapsed && (
+              <div className="mb-4 px-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
+                Navigation
+              </div>
+            )}
+
+            <nav className="space-y-2">
+              {navigationItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeSection === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveSection(item.id)}
+                    className={`flex w-full items-center rounded-2xl px-3 py-3 text-left transition ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${isActive ? 'bg-[#2d54b5] text-white shadow-[0_18px_35px_-22px_rgba(37,99,235,0.95)]' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                  >
+                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isActive ? 'bg-white/16 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    {!sidebarCollapsed && (
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold">{item.label}</span>
+                        <span className={`block truncate text-xs ${isActive ? 'text-white/72' : 'text-slate-400'}`}>{item.caption}</span>
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {!sidebarCollapsed && (
+              <div className="mt-8 rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Workspace</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-800">Manager Console</p>
+                  </div>
+                  <div className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                    Live
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-2 text-sm text-slate-500">
+                  <div className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
+                    <span>Leads</span>
+                    <span className="font-semibold text-slate-900">{leads.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
+                    <span>Users</span>
+                    <span className="font-semibold text-slate-900">{users.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
+                    <span>Connect Rate</span>
+                    <span className="font-semibold text-slate-900">{dashboardInsights.connectRate}%</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </aside>
+
+          <div className="min-w-0 space-y-4">
+            <header className="rounded-[28px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.16)] backdrop-blur">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h1 className="text-[30px] font-semibold tracking-tight text-slate-900">{activeSectionTitle}</h1>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                      {activeSectionCount}
+                    </span>
+                  </div>
+                  <p className="mt-1 max-w-3xl text-sm text-slate-500">{activeSectionDescription}</p>
+                </div>
+
+                <div className="flex flex-col gap-3 xl:items-end">
+                  <button
+                    onClick={() => setCommandOpen(true)}
+                    className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-400 transition hover:border-slate-300 hover:text-slate-600 xl:w-[320px]"
+                  >
+                    <Search className="h-4 w-4" />
+                    <span className="flex-1">Search dashboard...</span>
+                    <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-400">⌘K</span>
+                  </button>
+
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button variant="outline" className="rounded-2xl border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50" onClick={handleExportCurrentView}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Export
+                    </Button>
+
+                    {activeSection === 'leads' && (
+                      <Button variant="outline" className="rounded-2xl border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50" onClick={() => setIsImportDialogOpen(true)}>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Import
+                      </Button>
+                    )}
+
+                    <Button className="rounded-2xl bg-[#2d54b5] px-5 text-white shadow-[0_18px_35px_-20px_rgba(37,99,235,0.95)] hover:bg-[#23459a]" onClick={handlePrimaryAction}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      {primaryActionLabel}
+                    </Button>
+
+                    <Button variant="outline" size="icon" className="rounded-2xl border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50" aria-label="Notifications">
+                      <Bell className="h-4 w-4" />
+                    </Button>
+
+                    <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2d54b5] text-sm font-semibold text-white">
+                        {(user.email?.[0] || 'A').toUpperCase()}
+                      </div>
+                      <div className="hidden text-left sm:block">
+                        <p className="text-sm font-semibold text-slate-800">{user.email?.split('@')[0] || 'Manager'}</p>
+                        <p className="text-xs text-slate-400">{role === 'admin' ? 'Manager' : 'Sales'}</p>
+                      </div>
+                    </div>
+
+                    <Button variant="outline" className="rounded-2xl border-red-200 bg-white text-red-500 shadow-sm hover:bg-red-50 hover:text-red-600" onClick={handleSignOut}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Logout
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </header>
+
+            <main className="min-w-0 lg:max-h-[calc(100vh-56px)] lg:overflow-y-auto lg:pr-1">
+              {activeSection === 'overview' && renderOverview()}
+              {activeSection === 'leads' && renderLeads()}
+              {activeSection === 'call-activity' && renderCallActivity()}
+              {activeSection === 'marketplace' && renderMarketplace()}
+              {activeSection === 'settings' && renderSettings()}
+            </main>
           </div>
         </div>
-      </header>
-
-      <div className={`mx-auto grid w-full max-w-[1480px] grid-cols-1 gap-4 px-5 py-4 lg:h-[calc(100vh-96px)] ${sidebarCollapsed ? 'lg:grid-cols-[84px_minmax(0,1fr)]' : 'lg:grid-cols-[270px_minmax(0,1fr)]'}`}>
-        <aside className="h-fit rounded-2xl border bg-card p-3 shadow-sm lg:sticky lg:top-20">
-          <div className="mb-2 flex justify-end">
-            <Button variant="ghost" size="icon" onClick={() => setSidebarCollapsed((value) => !value)}>
-              {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-            </Button>
-          </div>
-          <div className="mb-3 rounded-xl border bg-muted/20 px-3 py-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Workspace</p>
-            {!sidebarCollapsed && <p className="text-sm font-medium text-foreground">Enterprise Admin</p>}
-          </div>
-          {!sidebarCollapsed && (
-            <div className="mb-3 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Navigation
-            </div>
-          )}
-          <nav className="space-y-1">
-            <button
-              onClick={() => setActiveSection('overview')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'overview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'} ${sidebarCollapsed ? 'justify-center' : ''}`}
-            >
-              <LayoutDashboard className="h-4 w-4" />
-              {!sidebarCollapsed && 'Overview'}
-            </button>
-            <button
-              onClick={() => setActiveSection('leads')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'leads' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'} ${sidebarCollapsed ? 'justify-center' : ''}`}
-            >
-              <Users className="h-4 w-4" />
-              {!sidebarCollapsed && 'Manage Leads'}
-            </button>
-            <button
-              onClick={() => setActiveSection('call-activity')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'call-activity' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'} ${sidebarCollapsed ? 'justify-center' : ''}`}
-            >
-              <Phone className="h-4 w-4" />
-              {!sidebarCollapsed && 'Call Activity'}
-            </button>
-            <button
-              onClick={() => setActiveSection('marketplace')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'marketplace' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'} ${sidebarCollapsed ? 'justify-center' : ''}`}
-            >
-              <Link2 className="h-4 w-4" />
-              {!sidebarCollapsed && 'Connect CRM'}
-            </button>
-            <button
-              onClick={() => setActiveSection('settings')}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${activeSection === 'settings' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'} ${sidebarCollapsed ? 'justify-center' : ''}`}
-            >
-              <Settings className="h-4 w-4" />
-              {!sidebarCollapsed && 'Settings'}
-            </button>
-          </nav>
-        </aside>
-
-        <main className="min-w-0 lg:overflow-y-auto lg:pr-1 lg:pb-1">
-          {activeSection === 'overview' && renderOverview()}
-          {activeSection === 'leads' && renderLeads()}
-          {activeSection === 'call-activity' && renderCallActivity()}
-          {activeSection === 'marketplace' && renderMarketplace()}
-          {activeSection === 'settings' && renderSettings()}
-        </main>
       </div>
 
       <CommandDialog open={commandOpen} onOpenChange={setCommandOpen}>
@@ -1992,11 +2270,11 @@ const AdminDashboard = () => {
             </CommandItem>
             <CommandItem onSelect={() => { setActiveSection('leads'); setCommandOpen(false); }}>
               <Users className="mr-2 h-4 w-4" />
-              Lead Operations
+              Projects
             </CommandItem>
             <CommandItem onSelect={() => { setActiveSection('call-activity'); setCommandOpen(false); }}>
               <Phone className="mr-2 h-4 w-4" />
-              Call Activity
+              Reports
             </CommandItem>
             <CommandItem onSelect={() => { setActiveSection('marketplace'); setCommandOpen(false); }}>
               <Link2 className="mr-2 h-4 w-4" />
