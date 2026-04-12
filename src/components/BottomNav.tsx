@@ -15,39 +15,40 @@ const navItems = [
 const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => {
   return (
     <nav
-      className="fixed left-0 right-0 z-50 border-t border-border bg-card/95 shadow-lg"
+      className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-2"
       style={{
-        bottom: 'max(env(safe-area-inset-bottom, 0px), 56px)',
-        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 4px)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     >
-      <div className="w-full max-w-md mx-auto flex justify-around items-center h-16 px-2">
-        {navItems.map((item) => {
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => onTabChange(item.id)}
-              className="relative flex flex-col items-center justify-center w-16 h-full"
-            >
-              {isActive && (
-                <div className="absolute -top-0.5 w-8 h-1 bg-primary rounded-full transition-[left,right,width] duration-200" />
-              )}
-              <item.icon
-                className={`w-5 h-5 transition-colors ${
-                  isActive ? 'text-primary' : 'text-muted-foreground'
-                }`}
-              />
-              <span
-                className={`text-[10px] mt-1 transition-colors ${
-                  isActive ? 'text-primary font-medium' : 'text-muted-foreground'
-                }`}
+      <div className="w-full max-w-md rounded-t-2xl border border-b-0 border-border bg-card/95 shadow-lg backdrop-blur">
+        <div className="flex h-16 items-center justify-around px-2">
+          {navItems.map((item) => {
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => onTabChange(item.id)}
+                className="relative flex h-full w-16 flex-col items-center justify-center"
               >
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
+                {isActive && (
+                  <div className="absolute -top-0.5 h-1 w-8 rounded-full bg-primary transition-[left,right,width] duration-200" />
+                )}
+                <item.icon
+                  className={`h-5 w-5 transition-colors ${
+                    isActive ? 'text-primary' : 'text-muted-foreground'
+                  }`}
+                />
+                <span
+                  className={`mt-1 text-[10px] transition-colors ${
+                    isActive ? 'font-medium text-primary' : 'text-muted-foreground'
+                  }`}
+                >
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </nav>
   );

@@ -15,7 +15,7 @@ const MobileLayout = ({ children }: MobileLayoutProps) => {
     >
       <div
         className="w-full max-w-md mx-auto min-h-[100dvh] relative overflow-x-hidden"
-        style={{ paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 56px) + 120px)' }}
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 104px)' }}
       >
         {children}
       </div>
