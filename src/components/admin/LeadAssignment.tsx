@@ -22,9 +22,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, Users, UserPlus, Filter } from 'lucide-react';
+import { Search, Users, UserPlus, Filter, Upload } from 'lucide-react';
 import { format } from 'date-fns';
 import type { Database } from '@/integrations/supabase/types';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import LeadImport from '@/components/admin/LeadImport';
 
 type Lead = Database['public']['Tables']['leads']['Row'];
 type LeadStatus = Database['public']['Enums']['lead_status'];
@@ -64,6 +66,7 @@ const LeadAssignment = () => {
   const [assignedFilter, setAssignedFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [selectedSalesUser, setSelectedSalesUser] = useState<string>('');
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   // Fetch all leads (admin sees all)
   const { data: leads = [], isLoading: leadsLoading } = useQuery({
@@ -178,13 +181,32 @@ const LeadAssignment = () => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Users className="w-5 h-5" />
-          Lead Assignment
-        </CardTitle>
-        <CardDescription>
-          View all leads and assign them to sales users
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Lead Assignment
+            </CardTitle>
+            <CardDescription className="mt-1">
+              View all leads and assign them to sales users
+            </CardDescription>
+          </div>
+          <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Upload className="mr-2 h-4 w-4" />
+                Import Leads
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Import Leads</DialogTitle>
+                <DialogDescription>Upload CSV/Excel and import leads for assignment.</DialogDescription>
+              </DialogHeader>
+              <LeadImport />
+            </DialogContent>
+          </Dialog>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Filters */}

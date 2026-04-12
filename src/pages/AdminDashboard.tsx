@@ -85,6 +85,7 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
+  Filter,
   MessageSquare,
   Phone,
   PhoneCall,
@@ -185,6 +186,11 @@ const AdminDashboard = () => {
   const [callReportView, setCallReportView] = useState<'overview' | 'user' | 'logs'>('overview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [leadStatusFilter, setLeadStatusFilter] = useState<'all' | 'new' | 'contacted' | 'qualified' | 'proposal' | 'won' | 'lost'>('all');
+  const [leadSearch, setLeadSearch] = useState('');
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [leadDetailId, setLeadDetailId] = useState<string | null>(null);
   const [syncLogs, setSyncLogs] = useState<SyncLogItem[]>([]);
   const [usersPage, setUsersPage] = useState(1);
   const usersPageSize = 10;
@@ -406,6 +412,28 @@ const AdminDashboard = () => {
       connectedCalls,
     };
   }, [filteredCallLogs, filteredLeads, leadTasks, userMap]);
+
+  const leadRows = useMemo(() => {
+    const searchText = leadSearch.trim().toLowerCase();
+    return filteredLeads
+      .filter((lead) => leadStatusFilter === 'all' || lead.status === leadStatusFilter)
+      .filter((lead) => {
+        if (!searchText) return true;
+        const haystack = `${lead.name} ${lead.email || ''} ${lead.phone || ''} ${lead.company || ''}`.toLowerCase();
+        return haystack.includes(searchText);
+      })
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [filteredLeads, leadSearch, leadStatusFilter]);
+
+  const selectedLeadRows = useMemo(
+    () => leadRows.filter((lead) => selectedLeadIds.includes(lead.id)),
+    [leadRows, selectedLeadIds],
+  );
+
+  const leadDetail = useMemo(
+    () => leads.find((entry) => entry.id === leadDetailId) || null,
+    [leadDetailId, leads],
+  );
 
   const paginatedUsers = useMemo(() => {
     const start = (usersPage - 1) * usersPageSize;
@@ -662,6 +690,43 @@ const AdminDashboard = () => {
     },
   });
 
+  const bulkDeactivateUsers = useMutation({
+    mutationFn: async (userIds: string[]) => {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_active: false })
+        .in('id', userIds);
+      if (error) throw error;
+      await supabase.from('user_roles').delete().in('user_id', userIds);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: 'Users Deactivated', description: `${selectedUserIds.length} users have been deactivated.` });
+      setSelectedUserIds([]);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Bulk Deactivate Failed', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const bulkActivateUsers = useMutation({
+    mutationFn: async (userIds: string[]) => {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_active: true })
+        .in('id', userIds);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: 'Users Activated', description: `${selectedUserIds.length} users have been activated.` });
+      setSelectedUserIds([]);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Bulk Activate Failed', description: error.message, variant: 'destructive' });
+    },
+  });
+
   const handleSignOut = async () => {
     await signOut();
     navigate('/admin/login');
@@ -899,7 +964,7 @@ const AdminDashboard = () => {
       exportCsv(
         'admin-leads.csv',
         ['Name', 'Company', 'Status', 'Owner', 'Phone', 'Email', 'Created'],
-        leads.map((lead) => [
+        leadRows.map((lead) => [
           lead.name,
           lead.company || '',
           lead.status,
@@ -1003,7 +1068,7 @@ const AdminDashboard = () => {
     activeSection === 'overview'
       ? `${leads.length + users.length + callLogs.length} records monitored`
       : activeSection === 'leads'
-        ? `${leads.length} leads visible`
+        ? `${leadRows.length} leads visible`
         : activeSection === 'call-activity'
           ? `${callActivityReport.filtered.length} calls in report`
           : activeSection === 'marketplace'
@@ -1039,6 +1104,63 @@ const AdminDashboard = () => {
     }
 
     setCommandOpen(true);
+  };
+
+  const getLeadProgressValue = (status: string | null) => {
+    switch ((status || '').toLowerCase()) {
+      case 'new':
+        return 18;
+      case 'contacted':
+        return 34;
+      case 'qualified':
+        return 56;
+      case 'proposal':
+        return 74;
+      case 'negotiation':
+        return 86;
+      case 'won':
+        return 100;
+      case 'lost':
+        return 12;
+      default:
+        return 24;
+    }
+  };
+
+  const getLeadStatusClasses = (status: string | null) => {
+    switch ((status || '').toLowerCase()) {
+      case 'won':
+        return {
+          badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+          progress: 'bg-emerald-200',
+          tail: 'bg-emerald-50',
+        };
+      case 'lost':
+        return {
+          badge: 'bg-rose-100 text-rose-700 border-rose-200',
+          progress: 'bg-rose-200',
+          tail: 'bg-rose-50',
+        };
+      case 'proposal':
+      case 'negotiation':
+        return {
+          badge: 'bg-violet-100 text-violet-700 border-violet-200',
+          progress: 'bg-violet-100',
+          tail: 'bg-violet-50',
+        };
+      case 'qualified':
+        return {
+          badge: 'bg-sky-100 text-sky-700 border-sky-200',
+          progress: 'bg-sky-100',
+          tail: 'bg-emerald-50',
+        };
+      default:
+        return {
+          badge: 'bg-slate-100 text-slate-700 border-slate-200',
+          progress: 'bg-sky-50',
+          tail: 'bg-emerald-50',
+        };
+    }
   };
 
   const renderOverview = () => (
@@ -1203,29 +1325,39 @@ const AdminDashboard = () => {
     <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
         <CardContent className="pt-4">
-          <div className="rounded-xl border p-3">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lead Assignment Workspace</p>
-              <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" variant="outline" className="whitespace-nowrap">
-                    <Upload className="mr-2 h-4 w-4" />
-                    Import Leads
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-                  <DialogHeader>
-                    <DialogTitle>Import Leads</DialogTitle>
-                    <DialogDescription>Upload CSV/Excel and import leads for assignment.</DialogDescription>
-                  </DialogHeader>
-                  <LeadImport />
-                </DialogContent>
-              </Dialog>
-            </div>
-            <LeadAssignment />
-          </div>
+          <LeadAssignment />
         </CardContent>
       </Card>
+
+      <Sheet open={!!leadDetailId} onOpenChange={(open) => !open && setLeadDetailId(null)}>
+        <SheetContent side="right" className="sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>{leadDetail?.name || 'Lead Details'}</SheetTitle>
+            <SheetDescription>Quick detail panel for rapid lead actions.</SheetDescription>
+          </SheetHeader>
+          {leadDetail ? (
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Contact</p>
+                <p className="font-medium">{leadDetail.phone}</p>
+                {leadDetail.email && <p className="text-muted-foreground">{leadDetail.email}</p>}
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Company</p>
+                <p className="font-medium">{leadDetail.company || '-'}</p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
+                <Badge>{leadDetail.status}</Badge>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Notes</p>
+                <p className="whitespace-pre-wrap text-muted-foreground">{leadDetail.notes || 'No notes available.'}</p>
+              </div>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 
@@ -1684,10 +1816,50 @@ const AdminDashboard = () => {
                 </div>
               </div>
             </div>
+            {selectedUserIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2">
+                <Badge variant="secondary">{selectedUserIds.length} selected</Badge>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-green-500 text-green-600"
+                  disabled={bulkActivateUsers.isPending}
+                  onClick={() => bulkActivateUsers.mutate(selectedUserIds)}
+                >
+                  <UserCheck className="mr-1 h-3 w-3" />
+                  Activate
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-500 text-amber-600"
+                  disabled={bulkDeactivateUsers.isPending}
+                  onClick={() => bulkDeactivateUsers.mutate(selectedUserIds.filter((id) => id !== user?.id))}
+                >
+                  <UserX className="mr-1 h-3 w-3" />
+                  Deactivate
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedUserIds([])}>Clear</Button>
+              </div>
+            )}
             <div className="overflow-hidden rounded-xl border">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[40px]">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 cursor-pointer"
+                        checked={paginatedUsers.length > 0 && selectedUserIds.length >= paginatedUsers.length && paginatedUsers.every((u) => selectedUserIds.includes(u.id))}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedUserIds((prev) => Array.from(new Set([...prev, ...paginatedUsers.map((u) => u.id)])));
+                          } else {
+                            setSelectedUserIds((prev) => prev.filter((id) => !paginatedUsers.map((u) => u.id).includes(id)));
+                          }
+                        }}
+                      />
+                    </TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
@@ -1698,7 +1870,21 @@ const AdminDashboard = () => {
                 </TableHeader>
                 <TableBody>
                   {paginatedUsers.map((entry) => (
-                    <TableRow key={entry.id}>
+                    <TableRow key={entry.id} className={selectedUserIds.includes(entry.id) ? 'bg-muted/30' : ''}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 cursor-pointer"
+                          checked={selectedUserIds.includes(entry.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedUserIds((prev) => [...prev, entry.id]);
+                            } else {
+                              setSelectedUserIds((prev) => prev.filter((id) => id !== entry.id));
+                            }
+                          }}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">{entry.full_name || 'No name'}</TableCell>
                       <TableCell className="text-muted-foreground">{entry.email}</TableCell>
                       <TableCell>
@@ -1759,7 +1945,7 @@ const AdminDashboard = () => {
                   ))}
                   {paginatedUsers.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
                         No users found.
                       </TableCell>
                     </TableRow>
@@ -1914,33 +2100,7 @@ const AdminDashboard = () => {
               })}
             </nav>
 
-            {!sidebarCollapsed && (
-              <div className="mt-8 rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Workspace</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-800">Manager Console</p>
-                  </div>
-                  <div className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                    Live
-                  </div>
-                </div>
-                <div className="mt-4 grid gap-2 text-sm text-slate-500">
-                  <div className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
-                    <span>Leads</span>
-                    <span className="font-semibold text-slate-900">{leads.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
-                    <span>Users</span>
-                    <span className="font-semibold text-slate-900">{users.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
-                    <span>Connect Rate</span>
-                    <span className="font-semibold text-slate-900">{dashboardInsights.connectRate}%</span>
-                  </div>
-                </div>
-              </div>
-            )}
+
           </aside>
 
           <div className="min-w-0 space-y-4">
