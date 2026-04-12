@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTenant } from '@/contexts/TenantContext';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -97,13 +98,17 @@ import {
   CircleAlert,
   CircleCheck,
   Download,
+  Building,
+  Mail,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
 import type { Database } from '@/integrations/supabase/types';
 
-type AdminSection = 'overview' | 'leads' | 'call-activity' | 'marketplace' | 'activity' | 'settings';
+type AdminSection = 'overview' | 'leads' | 'call-activity' | 'marketplace' | 'activity' | 'tenants' | 'team' | 'settings';
 type Lead = Database['public']['Tables']['leads']['Row'];
 type LeadActivity = Database['public']['Tables']['lead_activities']['Row'];
 type CallLog = Database['public']['Tables']['call_logs']['Row'];
@@ -146,6 +151,7 @@ type SyncLogItem = {
 
 const AdminDashboard = () => {
   const { user, role, isLoading, signOut } = useAuth();
+  const { currentTenant, tenants, tenantRole, tenantMembers, switchTenant, createTenant, updateTenant, inviteMember, removeMember } = useTenant();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -185,12 +191,22 @@ const AdminDashboard = () => {
   const [commandOpen, setCommandOpen] = useState(false);
   const [leadStatusFilter, setLeadStatusFilter] = useState<'all' | 'new' | 'contacted' | 'qualified' | 'proposal' | 'won' | 'lost'>('all');
   const [leadSearch, setLeadSearch] = useState('');
+  const [activitySearch, setActivitySearch] = useState('');
+  const [activityTypeFilter, setActivityTypeFilter] = useState<'all' | string>('all');
+  const [activityUserFilter, setActivityUserFilter] = useState<'all' | 'system' | string>('all');
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [leadDetailId, setLeadDetailId] = useState<string | null>(null);
   const [syncLogs, setSyncLogs] = useState<SyncLogItem[]>([]);
   const [usersPage, setUsersPage] = useState(1);
   const usersPageSize = 10;
+
+  // Tenant management state
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'member' | 'manager' | 'admin'>('member');
+  const [isInvitingMember, setIsInvitingMember] = useState(false);
+  const [tenantNameEdit, setTenantNameEdit] = useState(currentTenant?.name || '');
+  const [isEditingTenant, setIsEditingTenant] = useState(false);
 
   useEffect(() => {
     if (!isLoading && (!user || role !== 'admin')) {
@@ -349,7 +365,42 @@ const AdminDashboard = () => {
 
   const filteredCallLogs = useMemo(() => callLogs, [callLogs]);
 
-  const filteredActivities = useMemo(() => activities, [activities]);
+  const activityTypeOptions = useMemo(
+    () => Array.from(new Set(activities.map((entry) => entry.type).filter(Boolean))).sort(),
+    [activities],
+  );
+
+  const activityUserOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return activities.reduce<Array<{ id: string; label: string }>>((list, entry) => {
+      if (!entry.user_id || seen.has(entry.user_id)) return list;
+      seen.add(entry.user_id);
+      const label = userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User';
+      list.push({ id: entry.user_id, label });
+      return list;
+    }, []);
+  }, [activities, userMap]);
+
+  const filteredActivities = useMemo(() => {
+    const searchTerm = activitySearch.trim().toLowerCase();
+
+    return activities.filter((entry) => {
+      const matchesSearch = !searchTerm || [
+        entry.title,
+        entry.description || '',
+        entry.type || '',
+        entry.lead_id ? leadMap.get(entry.lead_id)?.name || '' : '',
+        entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || '' : 'system',
+      ].some((value) => value.toLowerCase().includes(searchTerm));
+
+      const matchesType = activityTypeFilter === 'all' || entry.type === activityTypeFilter;
+      const matchesUser = activityUserFilter === 'all'
+        || (activityUserFilter === 'system' && !entry.user_id)
+        || entry.user_id === activityUserFilter;
+
+      return matchesSearch && matchesType && matchesUser;
+    });
+  }, [activities, activitySearch, activityTypeFilter, activityUserFilter, leadMap, userMap]);
 
   const filteredLeads = useMemo(() => leads, [leads]);
 
@@ -1038,6 +1089,8 @@ const AdminDashboard = () => {
     { id: 'call-activity', label: 'Reports', caption: 'Call insights', icon: Activity },
     { id: 'activity', label: 'Activity', caption: 'Audit trail', icon: Activity },
     { id: 'marketplace', label: 'Integrations', caption: 'CRM sync', icon: Link2 },
+    { id: 'tenants', label: 'Tenants', caption: 'Organization', icon: Building },
+    { id: 'team', label: 'Team', caption: 'Members', icon: Users },
     { id: 'settings', label: 'Settings', caption: 'User settings', icon: Settings },
   ];
 
@@ -1052,7 +1105,11 @@ const AdminDashboard = () => {
             ? 'Integrations'
             : activeSection === 'activity'
               ? 'Activity'
-              : 'Settings';
+              : activeSection === 'tenants'
+                ? 'Tenant Settings'
+                : activeSection === 'team'
+                  ? 'Team Members'
+                  : 'Settings';
 
   const activeSectionDescription =
     activeSection === 'overview'
@@ -1065,7 +1122,11 @@ const AdminDashboard = () => {
             ? 'Manage CRM connectivity, sync jobs, and connector health.'
             : activeSection === 'activity'
               ? 'Audit activity feed across lead actions for admin visibility.'
-              : 'Create, edit, and manage role/access for sales users.';
+              : activeSection === 'tenants'
+                ? 'Manage organization settings, branding, and subscription.'
+                : activeSection === 'team'
+                  ? 'Invite team members, manage roles, and user access.'
+                  : 'Create, edit, and manage role/access for sales users.';
 
   const activeSectionCount =
     activeSection === 'overview'
@@ -1078,7 +1139,11 @@ const AdminDashboard = () => {
             ? `${syncLogs.length} sync runs tracked`
             : activeSection === 'activity'
               ? `${filteredActivities.length} activity events`
-              : `${users.length} users managed`;
+              : activeSection === 'tenants'
+                ? currentTenant ? `${tenants.length} tenant(s)` : 'No tenant selected'
+                : activeSection === 'team'
+                  ? `${tenantMembers.length} members`
+                  : `${users.length} users managed`;
 
   const primaryActionLabel =
     activeSection === 'settings'
@@ -1685,7 +1750,52 @@ const AdminDashboard = () => {
           </CardTitle>
           <CardDescription>Audit activity feed across lead actions for admin visibility.</CardDescription>
         </CardHeader>
-        <CardContent className="pt-4">
+        <CardContent className="space-y-4 pt-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px_auto]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search activity, lead, or user"
+                className="pl-9"
+                value={activitySearch}
+                onChange={(event) => setActivitySearch(event.target.value)}
+              />
+            </div>
+            <Select value={activityTypeFilter} onValueChange={setActivityTypeFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                {activityTypeOptions.map((type) => (
+                  <SelectItem key={type} value={type}>{type}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={activityUserFilter} onValueChange={setActivityUserFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Users" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Users</SelectItem>
+                <SelectItem value="system">System</SelectItem>
+                {activityUserOptions.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setActivitySearch('');
+                setActivityTypeFilter('all');
+                setActivityUserFilter('all');
+              }}
+            >
+              <Filter className="mr-2 h-4 w-4" />
+              Clear
+            </Button>
+          </div>
           <div className="overflow-hidden rounded-xl border">
             <Table>
               <TableHeader>
@@ -1713,7 +1823,7 @@ const AdminDashboard = () => {
                 {filteredActivities.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-muted-foreground">
-                      No activity logs yet.
+                      No activity logs match the current filters.
                     </TableCell>
                   </TableRow>
                 )}
@@ -1724,6 +1834,308 @@ const AdminDashboard = () => {
       </Card>
     </div>
   );
+
+  const renderTenants = () => (
+    <div className="space-y-4">
+      {!currentTenant ? (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <div>
+                <p className="font-medium text-amber-900">No tenant selected</p>
+                <p className="text-sm text-amber-700">You need to create or select a tenant to use this workspace.</p>
+              </div>
+            </div>
+            {tenants.length === 0 ? (
+              <Button className="mt-4" onClick={async () => {
+                try {
+                  const newTenant = await createTenant('My Organization', 'my-org-' + Math.random().toString(36).substring(7));
+                  toast({ title: 'Success', description: 'Tenant created successfully' });
+                } catch (error) {
+                  toast({ title: 'Error', description: 'Failed to create tenant', variant: 'destructive' });
+                }
+              }}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Tenant
+              </Button>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {currentTenant && (
+        <>
+          {/* Tenant Switcher */}
+          {tenants.length > 1 && (
+            <Card className="border-border/80 shadow-sm">
+              <CardHeader className="border-b bg-muted/20">
+                <CardTitle>Switch Tenant</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <div className="grid gap-2">
+                  {tenants.map((tenant) => (
+                    <button
+                      key={tenant.id}
+                      onClick={() => switchTenant(tenant.id)}
+                      className={`rounded-lg border-2 p-3 text-left transition ${
+                        currentTenant.id === tenant.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-transparent bg-muted hover:bg-muted/80'
+                      }`}
+                    >
+                      <p className="font-medium">{tenant.name}</p>
+                      <p className="text-xs text-muted-foreground">{tenant.slug}</p>
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Tenant Settings */}
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/20">
+              <div>
+                <CardTitle>Tenant Settings</CardTitle>
+                <CardDescription>Manage organization information and branding.</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditingTenant(!isEditingTenant)}
+              >
+                <Pencil className="mr-1 h-4 w-4" />
+                {isEditingTenant ? 'Cancel' : 'Edit'}
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-6 pt-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Organization Name</Label>
+                  {isEditingTenant ? (
+                    <Input
+                      value={tenantNameEdit}
+                      onChange={(e) => setTenantNameEdit(e.target.value)}
+                      placeholder="Enter organization name"
+                    />
+                  ) : (
+                    <p className="rounded-lg bg-muted px-3 py-2 text-sm">{currentTenant.name}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Slug</Label>
+                  <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">{currentTenant.slug}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Subscription Plan</Label>
+                  <Badge variant="outline" className="w-fit">
+                    {currentTenant.subscription_plan.toUpperCase()}
+                  </Badge>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Badge className="w-fit" variant={currentTenant.active ? 'default' : 'destructive'}>
+                    {currentTenant.active ? 'Active' : 'Inactive'}
+                  </Badge>
+                </div>
+              </div>
+
+              {isEditingTenant && (
+                <div className="flex gap-2 border-t pt-4">
+                  <Button
+                    onClick={async () => {
+                      try {
+                        await updateTenant(currentTenant.id, { name: tenantNameEdit });
+                        setIsEditingTenant(false);
+                        toast({ title: 'Success', description: 'Tenant updated successfully' });
+                      } catch (error) {
+                        toast({ title: 'Error', description: 'Failed to update tenant', variant: 'destructive' });
+                      }
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Check className="mr-1 h-4 w-4" />
+                    Save Changes
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+
+  const renderTeam = () => {
+    if (!currentTenant) {
+      return (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <div>
+                <p className="font-medium text-amber-900">No tenant selected</p>
+                <p className="text-sm text-amber-700">Switch to a tenant to manage team members.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {/* Invite Member */}
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="border-b bg-muted/20">
+            <CardTitle>Invite Team Member</CardTitle>
+            <CardDescription>Send an invite link to add new members to your team.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-6">
+            <div className="grid gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="invite-email">Email Address</Label>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  placeholder="colleague@company.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="invite-role">Role</Label>
+                <Select value={inviteRole} onValueChange={(value: any) => setInviteRole(value)}>
+                  <SelectTrigger id="invite-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">Member</SelectItem>
+                    <SelectItem value="manager">Manager</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Button
+              onClick={async () => {
+                if (!inviteEmail) {
+                  toast({ title: 'Error', description: 'Please enter an email address' });
+                  return;
+                }
+                try {
+                  setIsInvitingMember(true);
+                  await inviteMember(currentTenant.id, inviteEmail, inviteRole);
+                  toast({
+                    title: 'Invite sent',
+                    description: `Invitation sent to ${inviteEmail}`,
+                  });
+                  setInviteEmail('');
+                } catch (error: any) {
+                  toast({
+                    title: 'Error',
+                    description: error.message || 'Failed to send invite',
+                    variant: 'destructive',
+                  });
+                } finally {
+                  setIsInvitingMember(false);
+                }
+              }}
+              disabled={isInvitingMember || !inviteEmail}
+              className="w-full"
+            >
+              <Mail className="mr-2 h-4 w-4" />
+              {isInvitingMember ? 'Sending...' : 'Send Invite'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Team Members */}
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="border-b bg-muted/20">
+            <CardTitle>Team Members</CardTitle>
+            <CardDescription>{tenantMembers.length} member(s) in this organization</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {tenantMembers.length === 0 ? (
+              <p className="text-center text-sm text-muted-foreground">No team members yet. Invite someone to get started.</p>
+            ) : (
+              <div className="overflow-hidden rounded-xl border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Joined</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tenantMembers.map((member) => (
+                      <TableRow key={member.id}>
+                        <TableCell className="font-medium">
+                          {member.user?.user_metadata?.full_name || 'No name'}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{member.user?.email || 'N/A'}</TableCell>
+                        <TableCell>
+                          <Badge variant={member.role === 'admin' ? 'default' : 'secondary'}>
+                            {member.role}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {format(new Date(member.joined_at), 'MMM d, yyyy')}
+                        </TableCell>
+                        <TableCell className="flex justify-end gap-2">
+                          {tenantRole === 'admin' || tenantRole === 'owner' ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="outline">
+                                  Manage
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem disabled>Change Role (coming soon)</DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  disabled={member.user_id === user?.id}
+                                  onClick={async () => {
+                                    try {
+                                      await removeMember(currentTenant.id, member.user_id);
+                                      toast({ title: 'Success', description: 'Member removed from team' });
+                                    } catch (error) {
+                                      toast({ title: 'Error', description: 'Failed to remove member', variant: 'destructive' });
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Remove Member
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No actions available</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
 
   const renderSettings = () => (
     <div className="space-y-4">
@@ -2050,7 +2462,16 @@ const AdminDashboard = () => {
               })}
             </nav>
 
-
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <Button
+                variant="outline"
+                className={`w-full justify-center border-slate-200 text-slate-600 hover:text-slate-900 ${sidebarCollapsed ? 'px-0' : 'justify-start gap-2'}`}
+                onClick={() => void handleSignOut()}
+              >
+                <LogOut className="h-4 w-4" />
+                {!sidebarCollapsed && 'Logout'}
+              </Button>
+            </div>
           </aside>
 
           <div className="min-w-0 space-y-4">
@@ -2060,6 +2481,8 @@ const AdminDashboard = () => {
               {activeSection === 'call-activity' && renderCallActivity()}
               {activeSection === 'marketplace' && renderMarketplace()}
               {activeSection === 'activity' && renderActivity()}
+              {activeSection === 'tenants' && renderTenants()}
+              {activeSection === 'team' && renderTeam()}
               {activeSection === 'settings' && renderSettings()}
             </main>
           </div>
@@ -2090,6 +2513,14 @@ const AdminDashboard = () => {
             <CommandItem onSelect={() => { setActiveSection('marketplace'); setCommandOpen(false); }}>
               <Link2 className="mr-2 h-4 w-4" />
               Integrations
+            </CommandItem>
+            <CommandItem onSelect={() => { setActiveSection('tenants'); setCommandOpen(false); }}>
+              <Building className="mr-2 h-4 w-4" />
+              Tenant Settings
+            </CommandItem>
+            <CommandItem onSelect={() => { setActiveSection('team'); setCommandOpen(false); }}>
+              <Users className="mr-2 h-4 w-4" />
+              Team Members
             </CommandItem>
             <CommandItem onSelect={() => { setActiveSection('settings'); setCommandOpen(false); }}>
               <Settings className="mr-2 h-4 w-4" />

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { TenantProvider } from "@/contexts/TenantContext";
 import { useMicrophonePermission } from "@/hooks/useMicrophonePermission";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
@@ -14,6 +15,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import Install from "./pages/Install";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
+import AcceptInvite from "./pages/AcceptInvite";
 
 const queryClient = new QueryClient();
 
@@ -25,10 +27,11 @@ const AppContent = () => {
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
+        <TenantProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
             <Routes>
               {/* Sales Mobile App Routes */}
               <Route path="/auth" element={<Auth />} />
@@ -55,13 +58,13 @@ const AppContent = () => {
               {/* Public Routes */}
               <Route path="/install" element={<Install />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/invite" element={<AcceptInvite />} />
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
-        </TooltipProvider>
-      </AuthProvider>
+        </TooltipProvider>        </TenantProvider>      </AuthProvider>
     </ThemeProvider>
   </QueryClientProvider>
   );
