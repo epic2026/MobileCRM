@@ -85,7 +85,6 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
-  Filter,
   MessageSquare,
   Phone,
   PhoneCall,
@@ -186,10 +185,6 @@ const AdminDashboard = () => {
   const [callReportView, setCallReportView] = useState<'overview' | 'user' | 'logs'>('overview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
-  const [leadStatusFilter, setLeadStatusFilter] = useState<'all' | 'new' | 'contacted' | 'qualified' | 'proposal' | 'won' | 'lost'>('all');
-  const [leadSearch, setLeadSearch] = useState('');
-  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
-  const [leadDetailId, setLeadDetailId] = useState<string | null>(null);
   const [syncLogs, setSyncLogs] = useState<SyncLogItem[]>([]);
   const [usersPage, setUsersPage] = useState(1);
   const usersPageSize = 10;
@@ -411,28 +406,6 @@ const AdminDashboard = () => {
       connectedCalls,
     };
   }, [filteredCallLogs, filteredLeads, leadTasks, userMap]);
-
-  const leadRows = useMemo(() => {
-    const searchText = leadSearch.trim().toLowerCase();
-    return filteredLeads
-      .filter((lead) => leadStatusFilter === 'all' || lead.status === leadStatusFilter)
-      .filter((lead) => {
-        if (!searchText) return true;
-        const haystack = `${lead.name} ${lead.email || ''} ${lead.phone || ''} ${lead.company || ''}`.toLowerCase();
-        return haystack.includes(searchText);
-      })
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [filteredLeads, leadSearch, leadStatusFilter]);
-
-  const selectedLeadRows = useMemo(
-    () => leadRows.filter((lead) => selectedLeadIds.includes(lead.id)),
-    [leadRows, selectedLeadIds],
-  );
-
-  const leadDetail = useMemo(
-    () => leads.find((entry) => entry.id === leadDetailId) || null,
-    [leadDetailId, leads],
-  );
 
   const paginatedUsers = useMemo(() => {
     const start = (usersPage - 1) * usersPageSize;
@@ -926,7 +899,7 @@ const AdminDashboard = () => {
       exportCsv(
         'admin-leads.csv',
         ['Name', 'Company', 'Status', 'Owner', 'Phone', 'Email', 'Created'],
-        leadRows.map((lead) => [
+        leads.map((lead) => [
           lead.name,
           lead.company || '',
           lead.status,
@@ -1030,7 +1003,7 @@ const AdminDashboard = () => {
     activeSection === 'overview'
       ? `${leads.length + users.length + callLogs.length} records monitored`
       : activeSection === 'leads'
-        ? `${leadRows.length} leads visible`
+        ? `${leads.length} leads visible`
         : activeSection === 'call-activity'
           ? `${callActivityReport.filtered.length} calls in report`
           : activeSection === 'marketplace'
@@ -1066,63 +1039,6 @@ const AdminDashboard = () => {
     }
 
     setCommandOpen(true);
-  };
-
-  const getLeadProgressValue = (status: string | null) => {
-    switch ((status || '').toLowerCase()) {
-      case 'new':
-        return 18;
-      case 'contacted':
-        return 34;
-      case 'qualified':
-        return 56;
-      case 'proposal':
-        return 74;
-      case 'negotiation':
-        return 86;
-      case 'won':
-        return 100;
-      case 'lost':
-        return 12;
-      default:
-        return 24;
-    }
-  };
-
-  const getLeadStatusClasses = (status: string | null) => {
-    switch ((status || '').toLowerCase()) {
-      case 'won':
-        return {
-          badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-          progress: 'bg-emerald-200',
-          tail: 'bg-emerald-50',
-        };
-      case 'lost':
-        return {
-          badge: 'bg-rose-100 text-rose-700 border-rose-200',
-          progress: 'bg-rose-200',
-          tail: 'bg-rose-50',
-        };
-      case 'proposal':
-      case 'negotiation':
-        return {
-          badge: 'bg-violet-100 text-violet-700 border-violet-200',
-          progress: 'bg-violet-100',
-          tail: 'bg-violet-50',
-        };
-      case 'qualified':
-        return {
-          badge: 'bg-sky-100 text-sky-700 border-sky-200',
-          progress: 'bg-sky-100',
-          tail: 'bg-emerald-50',
-        };
-      default:
-        return {
-          badge: 'bg-slate-100 text-slate-700 border-slate-200',
-          progress: 'bg-sky-50',
-          tail: 'bg-emerald-50',
-        };
-    }
   };
 
   const renderOverview = () => (
@@ -1287,35 +1203,9 @@ const AdminDashboard = () => {
     <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
         <CardContent className="pt-4">
-          <div className="space-y-4">
-            <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto]">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search leads by name, email, phone, company"
-                  className="pl-9"
-                  value={leadSearch}
-                  onChange={(event) => setLeadSearch(event.target.value)}
-                />
-              </div>
-              <Select value={leadStatusFilter} onValueChange={(value: typeof leadStatusFilter) => setLeadStatusFilter(value)}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="new">New</SelectItem>
-                  <SelectItem value="contacted">Contacted</SelectItem>
-                  <SelectItem value="qualified">Qualified</SelectItem>
-                  <SelectItem value="proposal">Proposal</SelectItem>
-                  <SelectItem value="won">Won</SelectItem>
-                  <SelectItem value="lost">Lost</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" onClick={() => { setLeadStatusFilter('all'); setLeadSearch(''); }}>
-                <Filter className="mr-2 h-4 w-4" />
-                Clear
-              </Button>
+          <div className="rounded-xl border p-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lead Assignment Workspace</p>
               <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" variant="outline" className="whitespace-nowrap">
@@ -1332,141 +1222,10 @@ const AdminDashboard = () => {
                 </DialogContent>
               </Dialog>
             </div>
-
-            {selectedLeadIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2">
-                <Badge variant="secondary">{selectedLeadIds.length} selected</Badge>
-                <Button size="sm" variant="outline">Assign</Button>
-                <Button size="sm" variant="outline">
-                  <PhoneCall className="mr-1 h-3 w-3" />
-                  Call
-                </Button>
-                <Button size="sm" variant="outline">
-                  <MessageSquare className="mr-1 h-3 w-3" />
-                  Message
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setSelectedLeadIds([])}>Clear selection</Button>
-              </div>
-            )}
-
-            <div className="overflow-hidden rounded-xl border">
-              <div className="max-h-[560px] overflow-auto">
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-card">
-                    <TableRow>
-                      <TableHead className="w-[40px]">
-                        <input
-                          type="checkbox"
-                          checked={leadRows.length > 0 && selectedLeadIds.length === leadRows.length}
-                          onChange={(event) => {
-                            if (event.target.checked) {
-                              setSelectedLeadIds(leadRows.map((lead) => lead.id));
-                            } else {
-                              setSelectedLeadIds([]);
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead>Lead</TableHead>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Owner</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {leadRows.map((lead) => {
-                      const owner = lead.user_id
-                        ? userMap.get(lead.user_id)?.full_name || userMap.get(lead.user_id)?.email || 'Assigned user'
-                        : 'Unassigned';
-                      return (
-                        <TableRow key={lead.id}>
-                          <TableCell>
-                            <input
-                              type="checkbox"
-                              checked={selectedLeadIds.includes(lead.id)}
-                              onChange={(event) => {
-                                if (event.target.checked) {
-                                  setSelectedLeadIds((prev) => [...prev, lead.id]);
-                                } else {
-                                  setSelectedLeadIds((prev) => prev.filter((id) => id !== lead.id));
-                                }
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <p className="font-medium">{lead.name}</p>
-                            <p className="text-xs text-muted-foreground">{lead.phone}</p>
-                            {lead.email && <p className="text-xs text-muted-foreground">{lead.email}</p>}
-                          </TableCell>
-                          <TableCell>{lead.company || '-'}</TableCell>
-                          <TableCell>
-                            <Badge variant={lead.status === 'won' ? 'default' : lead.status === 'lost' ? 'destructive' : 'secondary'}>
-                              {lead.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{owner}</TableCell>
-                          <TableCell>{format(new Date(lead.created_at), 'dd MMM yyyy')}</TableCell>
-                          <TableCell>
-                            <div className="flex justify-end gap-1">
-                              <Button size="sm" variant="outline" onClick={() => setLeadDetailId(lead.id)}>Open</Button>
-                              <Button size="sm" variant="outline"><PhoneCall className="h-3 w-3" /></Button>
-                              <Button size="sm" variant="outline"><MessageSquare className="h-3 w-3" /></Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {leadRows.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground">
-                          No leads match current filters.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            <div className="rounded-xl border p-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assignment Workspace</p>
-              <LeadAssignment />
-            </div>
+            <LeadAssignment />
           </div>
         </CardContent>
       </Card>
-
-      <Sheet open={!!leadDetailId} onOpenChange={(open) => !open && setLeadDetailId(null)}>
-        <SheetContent side="right" className="sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle>{leadDetail?.name || 'Lead Details'}</SheetTitle>
-            <SheetDescription>Quick detail panel for rapid lead actions.</SheetDescription>
-          </SheetHeader>
-          {leadDetail ? (
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Contact</p>
-                <p className="font-medium">{leadDetail.phone}</p>
-                {leadDetail.email && <p className="text-muted-foreground">{leadDetail.email}</p>}
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Company</p>
-                <p className="font-medium">{leadDetail.company || '-'}</p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
-                <Badge>{leadDetail.status}</Badge>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Notes</p>
-                <p className="whitespace-pre-wrap text-muted-foreground">{leadDetail.notes || 'No notes available.'}</p>
-              </div>
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
     </div>
   );
 
