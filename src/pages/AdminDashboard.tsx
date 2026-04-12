@@ -103,8 +103,7 @@ import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
 import type { Database } from '@/integrations/supabase/types';
 
-type AdminSection = 'overview' | 'leads' | 'call-activity' | 'marketplace' | 'settings';
-type SettingsTab = 'users' | 'activity';
+type AdminSection = 'overview' | 'leads' | 'call-activity' | 'marketplace' | 'activity' | 'settings';
 type Lead = Database['public']['Tables']['leads']['Row'];
 type LeadActivity = Database['public']['Tables']['lead_activities']['Row'];
 type CallLog = Database['public']['Tables']['call_logs']['Row'];
@@ -152,8 +151,6 @@ const AdminDashboard = () => {
   const queryClient = useQueryClient();
 
   const [activeSection, setActiveSection] = useState<AdminSection>('overview');
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>('users');
-
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
@@ -994,30 +991,31 @@ const AdminDashboard = () => {
     }
 
     if (activeSection === 'settings') {
-      if (settingsTab === 'users') {
-        exportCsv(
-          'admin-users.csv',
-          ['Name', 'Email', 'Role', 'Status', 'Created'],
-          users.map((entry) => [
-            entry.full_name || 'No name',
-            entry.email,
-            entry.role || 'No role',
-            entry.is_active ? 'Active' : 'Inactive',
-            format(new Date(entry.created_at), 'yyyy-MM-dd'),
-          ]),
-        );
-      } else {
-        exportCsv(
-          'admin-activity-log.csv',
-          ['Time', 'Activity', 'Lead', 'User'],
-          filteredActivities.map((entry) => [
-            format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm'),
-            entry.title,
-            entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A',
-            entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System',
-          ]),
-        );
-      }
+      exportCsv(
+        'admin-users.csv',
+        ['Name', 'Email', 'Role', 'Status', 'Created'],
+        users.map((entry) => [
+          entry.full_name || 'No name',
+          entry.email,
+          entry.role || 'No role',
+          entry.is_active ? 'Active' : 'Inactive',
+          format(new Date(entry.created_at), 'yyyy-MM-dd'),
+        ]),
+      );
+      return;
+    }
+
+    if (activeSection === 'activity') {
+      exportCsv(
+        'admin-activity-log.csv',
+        ['Time', 'Activity', 'Lead', 'User'],
+        filteredActivities.map((entry) => [
+          format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm'),
+          entry.title,
+          entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A',
+          entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System',
+        ]),
+      );
       return;
     }
 
@@ -1038,8 +1036,9 @@ const AdminDashboard = () => {
     { id: 'overview', label: 'Overview', caption: 'Workspace pulse', icon: LayoutDashboard },
     { id: 'leads', label: 'Manage Leads', caption: 'Lead pipeline', icon: Users },
     { id: 'call-activity', label: 'Reports', caption: 'Call insights', icon: Activity },
+    { id: 'activity', label: 'Activity', caption: 'Audit trail', icon: Activity },
     { id: 'marketplace', label: 'Integrations', caption: 'CRM sync', icon: Link2 },
-    { id: 'settings', label: 'Settings', caption: 'Access control', icon: Settings },
+    { id: 'settings', label: 'Settings', caption: 'User settings', icon: Settings },
   ];
 
   const activeSectionTitle =
@@ -1051,7 +1050,9 @@ const AdminDashboard = () => {
           ? 'Reports'
           : activeSection === 'marketplace'
             ? 'Integrations'
-            : 'Settings';
+            : activeSection === 'activity'
+              ? 'Activity'
+              : 'Settings';
 
   const activeSectionDescription =
     activeSection === 'overview'
@@ -1062,7 +1063,9 @@ const AdminDashboard = () => {
           ? 'Inspect team calling performance, quality, and raw logs.'
           : activeSection === 'marketplace'
             ? 'Manage CRM connectivity, sync jobs, and connector health.'
-            : 'Control user lifecycle, permissions, and audit visibility.';
+            : activeSection === 'activity'
+              ? 'Audit activity feed across lead actions for admin visibility.'
+              : 'Create, edit, and manage role/access for sales users.';
 
   const activeSectionCount =
     activeSection === 'overview'
@@ -1073,9 +1076,9 @@ const AdminDashboard = () => {
           ? `${callActivityReport.filtered.length} calls in report`
           : activeSection === 'marketplace'
             ? `${syncLogs.length} sync runs tracked`
-            : settingsTab === 'users'
-              ? `${users.length} users managed`
-              : `${filteredActivities.length} activity events`;
+            : activeSection === 'activity'
+              ? `${filteredActivities.length} activity events`
+              : `${users.length} users managed`;
 
   const primaryActionLabel =
     activeSection === 'settings'
@@ -1089,7 +1092,6 @@ const AdminDashboard = () => {
   const handlePrimaryAction = () => {
     if (activeSection === 'settings') {
       setIsCreateDialogOpen(true);
-      setSettingsTab('users');
       return;
     }
 
@@ -1097,44 +1099,15 @@ const AdminDashboard = () => {
       void handleConnectZoho();
       return;
     }
-
-    if (activeSection === 'call-activity') {
-      setCallReportView('logs');
-      return;
-    }
-
-    setCommandOpen(true);
   };
 
   const getLeadProgressValue = (status: string | null) => {
     switch ((status || '').toLowerCase()) {
-      case 'new':
-        return 18;
-      case 'contacted':
-        return 34;
-      case 'qualified':
-        return 56;
-      case 'proposal':
-        return 74;
-      case 'negotiation':
-        return 86;
-      case 'won':
-        return 100;
-      case 'lost':
-        return 12;
-      default:
-        return 24;
-    }
-  };
-
-  const getLeadStatusClasses = (status: string | null) => {
-    switch ((status || '').toLowerCase()) {
-      case 'won':
-        return {
-          badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-          progress: 'bg-emerald-200',
-          tail: 'bg-emerald-50',
-        };
+      case 'won': return 100;
+      case 'negotiation': return 80;
+      case 'proposal': return 60;
+      case 'qualified': return 40;
+      case 'contacted': return 24;
       case 'lost':
         return {
           badge: 'bg-rose-100 text-rose-700 border-rose-200',
@@ -1702,33 +1675,59 @@ const AdminDashboard = () => {
     </div>
   );
 
-  const renderSettings = () => (
+  const renderActivity = () => (
     <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
         <CardHeader className="border-b bg-muted/20">
-          <CardTitle>Administration & Access</CardTitle>
-          <CardDescription>Manage user lifecycle, role governance, and activity auditing.</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Activity Log
+          </CardTitle>
+          <CardDescription>Audit activity feed across lead actions for admin visibility.</CardDescription>
         </CardHeader>
         <CardContent className="pt-4">
-          <div className="inline-flex rounded-lg border bg-card p-1">
-            <button
-              onClick={() => setSettingsTab('users')}
-              className={`rounded-md px-4 py-2 text-sm ${settingsTab === 'users' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
-            >
-              User
-            </button>
-            <button
-              onClick={() => setSettingsTab('activity')}
-              className={`rounded-md px-4 py-2 text-sm ${settingsTab === 'activity' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}
-            >
-              Activity
-            </button>
+          <div className="overflow-hidden rounded-xl border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Activity</TableHead>
+                  <TableHead>Lead</TableHead>
+                  <TableHead>User</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredActivities.map((entry) => (
+                  <TableRow key={entry.id}>
+                    <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy h:mm a')}</TableCell>
+                    <TableCell>
+                      <p className="text-sm font-medium">{entry.title}</p>
+                      {entry.description && <p className="text-xs text-muted-foreground">{entry.description}</p>}
+                    </TableCell>
+                    <TableCell>{entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A'}</TableCell>
+                    <TableCell>
+                      {entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {filteredActivities.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground">
+                      No activity logs yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
 
-      {settingsTab === 'users' && (
-        <Card className="border-border/80 shadow-sm">
+  const renderSettings = () => (
+    <div className="space-y-4">
+      <Card className="border-border/80 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/20">
             <div>
               <CardTitle>User Settings</CardTitle>
@@ -1979,55 +1978,6 @@ const AdminDashboard = () => {
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {settingsTab === 'activity' && (
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="border-b bg-muted/20">
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
-              Activity Settings Log
-            </CardTitle>
-            <CardDescription>Audit activity feed across lead actions for admin visibility.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <div className="overflow-hidden rounded-xl border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Activity</TableHead>
-                    <TableHead>Lead</TableHead>
-                    <TableHead>User</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredActivities.map((entry) => (
-                    <TableRow key={entry.id}>
-                      <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy h:mm a')}</TableCell>
-                      <TableCell>
-                        <p className="text-sm font-medium">{entry.title}</p>
-                        {entry.description && <p className="text-xs text-muted-foreground">{entry.description}</p>}
-                      </TableCell>
-                      <TableCell>{entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A'}</TableCell>
-                      <TableCell>
-                        {entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {filteredActivities.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
-                        No activity logs yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 
@@ -2047,7 +1997,7 @@ const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-[#f5f7fb] text-slate-900" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-      <div className="mx-auto w-full max-w-[1540px] px-4 py-4 lg:px-5">
+      <div className="w-full px-4 py-4 lg:px-5">
         <div className={`grid grid-cols-1 gap-4 ${sidebarCollapsed ? 'lg:grid-cols-[78px_minmax(0,1fr)]' : 'lg:grid-cols-[272px_minmax(0,1fr)]'}`}>
           <aside className="relative rounded-[28px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.28)] backdrop-blur">
             <button
@@ -2109,6 +2059,7 @@ const AdminDashboard = () => {
               {activeSection === 'leads' && renderLeads()}
               {activeSection === 'call-activity' && renderCallActivity()}
               {activeSection === 'marketplace' && renderMarketplace()}
+              {activeSection === 'activity' && renderActivity()}
               {activeSection === 'settings' && renderSettings()}
             </main>
           </div>
@@ -2132,6 +2083,10 @@ const AdminDashboard = () => {
               <Phone className="mr-2 h-4 w-4" />
               Reports
             </CommandItem>
+            <CommandItem onSelect={() => { setActiveSection('activity'); setCommandOpen(false); }}>
+              <Activity className="mr-2 h-4 w-4" />
+              Activity
+            </CommandItem>
             <CommandItem onSelect={() => { setActiveSection('marketplace'); setCommandOpen(false); }}>
               <Link2 className="mr-2 h-4 w-4" />
               Integrations
@@ -2143,7 +2098,7 @@ const AdminDashboard = () => {
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading="Actions">
-            <CommandItem onSelect={() => { setIsCreateDialogOpen(true); setActiveSection('settings'); setSettingsTab('users'); setCommandOpen(false); }}>
+            <CommandItem onSelect={() => { setIsCreateDialogOpen(true); setActiveSection('settings'); setCommandOpen(false); }}>
               <Plus className="mr-2 h-4 w-4" />
               Create User
             </CommandItem>
