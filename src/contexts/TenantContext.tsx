@@ -24,7 +24,8 @@ export interface TenantMember {
   joined_at: string;
   user?: {
     email: string;
-    full_name?: string;
+    full_name?: string | null;
+    user_metadata?: { full_name?: string | null };
   };
 }
 
@@ -116,27 +117,48 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
   // Fetch tenant members
   const fetchTenantMembers = useCallback(async (tenantId: string) => {
     try {
-      const { data, error } = await supabase
+      const { data: members, error: membersError } = await supabase
         .from('tenant_members')
-        .select(`
-          id,
-          tenant_id,
-          user_id,
-          role,
-          joined_at,
-          user:user_id (
-            email,
-            user_metadata
-          )
-        `)
+        .select('id, tenant_id, user_id, role, joined_at')
         .eq('tenant_id', tenantId);
 
-      if (error) {
-        console.error('Error fetching tenant members:', error);
+      if (membersError) {
+        console.error('Error fetching tenant members:', membersError);
         return [];
       }
 
-      return data as TenantMember[] || [];
+      const userIds = (members || []).map((member) => member.user_id).filter(Boolean);
+
+      let profileMap = new Map<string, { email: string; full_name: string | null }>();
+      if (userIds.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, email, full_name')
+          .in('id', userIds);
+
+        if (profilesError) {
+          console.error('Error fetching profiles for tenant members:', profilesError);
+        } else {
+          profileMap = new Map(
+            (profiles || []).map((profile) => [
+              profile.id,
+              { email: profile.email, full_name: profile.full_name },
+            ])
+          );
+        }
+      }
+
+      return (members || []).map((member) => {
+        const profile = profileMap.get(member.user_id);
+        return {
+          ...member,
+          user: {
+            email: profile?.email || 'Unknown',
+            full_name: profile?.full_name || null,
+            user_metadata: { full_name: profile?.full_name || null },
+          },
+        } as TenantMember;
+      });
     } catch (error) {
       console.error('Error fetching tenant members:', error);
       return [];
@@ -190,9 +212,17 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
         const userTenants = await fetchUserTenants(user.id);
         setTenants(userTenants);
 
-        // Set first tenant as default
+        // Restore tenant selection when available
+        const storedTenantId = sessionStorage.getItem('currentTenantId');
+
+        // Set selected tenant or fallback to first available tenant
         if (userTenants.length > 0) {
-          await switchTenant(userTenants[0].id);
+          const candidateTenantId =
+            storedTenantId && userTenants.some((tenant) => tenant.id === storedTenantId)
+              ? storedTenantId
+              : userTenants[0].id;
+
+          await switchTenant(candidateTenantId);
         }
       } catch (error) {
         console.error('Error initializing tenants:', error);
@@ -254,6 +284,19 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
         if (error) throw error;
 
         const newTenant = data as Tenant;
+
+        const { error: ownerMemberError } = await supabase
+          .from('tenant_members')
+          .insert({
+            tenant_id: newTenant.id,
+            user_id: user.id,
+            role: 'owner',
+          });
+
+        if (ownerMemberError) {
+          console.error('Error adding tenant owner as member:', ownerMemberError);
+        }
+
         setTenants([...tenants, newTenant]);
         await switchTenant(newTenant.id);
 

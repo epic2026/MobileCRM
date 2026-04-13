@@ -1089,7 +1089,9 @@ const AdminDashboard = () => {
     { id: 'call-activity', label: 'Reports', caption: 'Call insights', icon: Activity },
     { id: 'activity', label: 'Activity', caption: 'Audit trail', icon: Activity },
     { id: 'marketplace', label: 'Integrations', caption: 'CRM sync', icon: Link2 },
-    { id: 'settings', label: 'Users', caption: 'User management', icon: Settings },
+    { id: 'tenants', label: 'Tenants', caption: 'Organization settings', icon: Building },
+    { id: 'team', label: 'Tenant Users', caption: 'Invites and roles', icon: Users },
+    { id: 'settings', label: 'Users', caption: 'Platform users', icon: Settings },
   ];
 
   const activeSectionTitle =
@@ -1106,8 +1108,8 @@ const AdminDashboard = () => {
               : activeSection === 'tenants'
                 ? 'Tenant Settings'
                 : activeSection === 'team'
-                  ? 'Team Members'
-                  : 'Settings';
+                  ? 'Tenant Users'
+                  : 'Users';
 
   const activeSectionDescription =
     activeSection === 'overview'
@@ -1123,7 +1125,7 @@ const AdminDashboard = () => {
               : activeSection === 'tenants'
                 ? 'Manage organization settings, branding, and subscription.'
                 : activeSection === 'team'
-                  ? 'Invite team members, manage roles, and user access.'
+                  ? 'Invite tenant users, manage roles, and access controls.'
                   : 'Create, edit, and manage role/access for sales users.';
 
   const activeSectionCount =
@@ -2529,6 +2531,14 @@ const AdminDashboard = () => {
             <CommandItem onSelect={() => { setActiveSection('marketplace'); setCommandOpen(false); }}>
               <Link2 className="mr-2 h-4 w-4" />
               Integrations
+            </CommandItem>
+            <CommandItem onSelect={() => { setActiveSection('tenants'); setCommandOpen(false); }}>
+              <Building className="mr-2 h-4 w-4" />
+              Tenants
+            </CommandItem>
+            <CommandItem onSelect={() => { setActiveSection('team'); setCommandOpen(false); }}>
+              <Users className="mr-2 h-4 w-4" />
+              Tenant Users
             </CommandItem>
             <CommandItem onSelect={() => { setActiveSection('settings'); setCommandOpen(false); }}>
               <Settings className="mr-2 h-4 w-4" />
