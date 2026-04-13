@@ -1089,9 +1089,7 @@ const AdminDashboard = () => {
     { id: 'call-activity', label: 'Reports', caption: 'Call insights', icon: Activity },
     { id: 'activity', label: 'Activity', caption: 'Audit trail', icon: Activity },
     { id: 'marketplace', label: 'Integrations', caption: 'CRM sync', icon: Link2 },
-    { id: 'tenants', label: 'Tenants', caption: 'Organization', icon: Building },
-    { id: 'team', label: 'Team', caption: 'Members', icon: Users },
-    { id: 'settings', label: 'Settings', caption: 'User settings', icon: Settings },
+    { id: 'settings', label: 'Users', caption: 'User management', icon: Settings },
   ];
 
   const activeSectionTitle =
@@ -2532,17 +2530,9 @@ const AdminDashboard = () => {
               <Link2 className="mr-2 h-4 w-4" />
               Integrations
             </CommandItem>
-            <CommandItem onSelect={() => { setActiveSection('tenants'); setCommandOpen(false); }}>
-              <Building className="mr-2 h-4 w-4" />
-              Tenant Settings
-            </CommandItem>
-            <CommandItem onSelect={() => { setActiveSection('team'); setCommandOpen(false); }}>
-              <Users className="mr-2 h-4 w-4" />
-              Team Members
-            </CommandItem>
             <CommandItem onSelect={() => { setActiveSection('settings'); setCommandOpen(false); }}>
               <Settings className="mr-2 h-4 w-4" />
-              Settings
+              Users
             </CommandItem>
           </CommandGroup>
           <CommandSeparator />
