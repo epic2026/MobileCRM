@@ -43,7 +43,7 @@ const Auth = () => {
     if (user && !isLoading && role) {
       if (role === 'sales') {
         navigate('/');
-      } else if (role === 'admin') {
+      } else if (role === 'admin' || role === 'super_admin') {
         // Admin users should go to admin dashboard
         navigate('/admin');
       }

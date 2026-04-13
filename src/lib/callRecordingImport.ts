@@ -32,14 +32,16 @@ interface CallLogMatch {
 
 interface PerformSystemRecordingScanParams {
   userId: string;
+  tenantId: string;
   leads?: Lead[];
 }
 
 interface ImportSystemRecordingParams {
   recording: ImportedSystemRecording;
   userId: string;
+  tenantId: string;
   uploadRecording: (file: Blob, filename: string) => Promise<string | null>;
-  createRecording: (recording: Omit<CallRecording, 'id' | 'created_at' | 'processed_at'>) => Promise<CallRecording>;
+  createRecording: (recording: Omit<CallRecording, 'id' | 'created_at' | 'processed_at' | 'tenant_id'>) => Promise<CallRecording>;
   analyzeRecording: (params: {
     recordingId: string;
     transcription?: string;
@@ -121,6 +123,7 @@ export const ensureMediaAudioPermission = async () => {
 
 export const performSystemRecordingScan = async ({
   userId,
+  tenantId,
   leads = [],
 }: PerformSystemRecordingScanParams): Promise<ImportedSystemRecording[]> => {
   const [{ recordings }, { data: callLogs, error: callLogError }] = await Promise.all([
@@ -129,6 +132,7 @@ export const performSystemRecordingScan = async ({
       .from('call_logs')
       .select('id, lead_id, phone, created_at, duration')
       .eq('user_id', userId)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
       .limit(400),
   ]);
@@ -225,6 +229,7 @@ export const performSystemRecordingScan = async ({
 export const importSystemRecording = async ({
   recording,
   userId,
+  tenantId,
   uploadRecording,
   createRecording,
   analyzeRecording,
@@ -242,6 +247,7 @@ export const importSystemRecording = async ({
     .from('call_recordings')
     .select('id')
     .eq('user_id', userId)
+    .eq('tenant_id', tenantId)
     .eq('file_path', storagePathCandidate)
     .limit(1);
 
@@ -275,6 +281,7 @@ export const importSystemRecording = async ({
     const { data: insertedCallLog, error: callLogInsertError } = await supabase
       .from('call_logs')
       .insert({
+        tenant_id: tenantId,
         phone: recording.detectedPhone || recording.matchedPhone || 'Unknown',
         duration: recording.duration || 0,
         type: 'outgoing',
@@ -305,6 +312,7 @@ export const importSystemRecording = async ({
 
   if (leadId) {
     await supabase.from('lead_activities').insert({
+      tenant_id: tenantId,
       lead_id: leadId,
       type: 'call',
       title: 'Imported call recording',

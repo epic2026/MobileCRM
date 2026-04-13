@@ -4,11 +4,13 @@ import { useToast } from '@/hooks/use-toast';
 import { useEffect } from 'react';
 import type { Json } from '@/integrations/supabase/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTenant } from '@/contexts/TenantContext';
 
 export type ActivityType = 'call' | 'email' | 'meeting' | 'note' | 'task_created' | 'status_change';
 
 export interface LeadActivity {
   id: string;
+  tenant_id: string | null;
   lead_id: string;
   user_id: string | null;
   type: string;
@@ -22,28 +24,31 @@ export const useLeadActivities = (leadId: string | null) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { currentTenant } = useTenant();
+  const tenantId = currentTenant?.id ?? null;
 
   const { data: activities = [], isLoading, error } = useQuery({
-    queryKey: ['lead_activities', leadId],
+    queryKey: ['lead_activities', leadId, tenantId],
     queryFn: async () => {
-      if (!leadId) return [];
+      if (!leadId || !tenantId) return [];
       const { data, error } = await supabase
         .from('lead_activities')
         .select('*')
         .eq('lead_id', leadId)
+        .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       return data as LeadActivity[];
     },
-    enabled: !!leadId,
+    enabled: !!leadId && !!tenantId,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
   });
 
   // Real-time subscription
   useEffect(() => {
-    if (!leadId) return;
+    if (!leadId || !tenantId) return;
 
     const channel = supabase
       .channel(`lead-activities-changes-${leadId}`)
@@ -53,10 +58,10 @@ export const useLeadActivities = (leadId: string | null) => {
           event: '*',
           schema: 'public',
           table: 'lead_activities',
-          filter: `lead_id=eq.${leadId}`,
+          filter: `tenant_id=eq.${tenantId}`,
         },
         () => {
-          queryClient.invalidateQueries({ queryKey: ['lead_activities', leadId] });
+          queryClient.invalidateQueries({ queryKey: ['lead_activities', leadId, tenantId] });
         }
       )
       .subscribe();
@@ -64,16 +69,18 @@ export const useLeadActivities = (leadId: string | null) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [leadId, queryClient]);
+  }, [leadId, queryClient, tenantId]);
 
   const createActivity = useMutation({
     mutationFn: async (activity: Omit<LeadActivity, 'id' | 'created_at' | 'user_id'>) => {
       if (!user) throw new Error('Not authenticated');
+      if (!tenantId) throw new Error('No tenant selected');
 
       const { data, error } = await supabase
         .from('lead_activities')
         .insert([{
           lead_id: activity.lead_id,
+          tenant_id: tenantId,
           type: activity.type,
           title: activity.title,
           description: activity.description,
@@ -87,7 +94,7 @@ export const useLeadActivities = (leadId: string | null) => {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['lead_activities', leadId] });
+      queryClient.invalidateQueries({ queryKey: ['lead_activities', leadId, tenantId] });
     },
     onError: (error) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });

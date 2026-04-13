@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTenant } from '@/contexts/TenantContext';
 import { useLeads } from '@/hooks/useLeads';
 import { useCallRecordings } from '@/hooks/useCallRecordings';
 import { useToast } from '@/hooks/use-toast';
@@ -28,18 +29,20 @@ const CallRecordingToggle = () => {
   const [manualLeadByRecording, setManualLeadByRecording] = useState<Record<string, string>>({});
 
   const { user } = useAuth();
+  const { currentTenant } = useTenant();
   const { leads } = useLeads();
   const { uploadRecording, createRecording, analyzeRecording } = useCallRecordings();
   const { toast } = useToast();
 
   const handleImport = async (recording: ImportedSystemRecording) => {
-    if (!user) return;
+    if (!user || !currentTenant) return;
 
     setImportingContentUri(recording.contentUri);
     try {
       const imported = await importSystemRecording({
         recording,
         userId: user.id,
+        tenantId: currentTenant.id,
         uploadRecording,
         createRecording: createRecording.mutateAsync,
         analyzeRecording: analyzeRecording.mutate,
@@ -74,7 +77,7 @@ const CallRecordingToggle = () => {
   };
 
   const scanSystemRecordings = async () => {
-    if (!user) return;
+    if (!user || !currentTenant) return;
 
     setIsScanningSystemRecordings(true);
     try {
@@ -83,7 +86,7 @@ const CallRecordingToggle = () => {
         throw new Error('Media audio permission denied');
       }
 
-      const shortlisted = await performSystemRecordingScan({ userId: user.id, leads });
+      const shortlisted = await performSystemRecordingScan({ userId: user.id, tenantId: currentTenant.id, leads });
       const lowConfidenceOnly = shortlisted.filter((recording) => recording.confidence === 'low');
       setSystemRecordings(lowConfidenceOnly);
 
@@ -93,6 +96,7 @@ const CallRecordingToggle = () => {
           const imported = await importSystemRecording({
             recording,
             userId: user.id,
+            tenantId: currentTenant.id,
             uploadRecording,
             createRecording: createRecording.mutateAsync,
             analyzeRecording: analyzeRecording.mutate,

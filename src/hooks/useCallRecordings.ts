@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTenant } from '@/contexts/TenantContext';
 import { useToast } from '@/hooks/use-toast';
 
 export interface CallRecording {
   id: string;
+  tenant_id: string | null;
   call_log_id: string | null;
   lead_id: string | null;
   user_id: string;
@@ -20,6 +22,8 @@ export interface CallRecording {
 
 export const useCallRecordings = (leadId?: string | null) => {
   const { user } = useAuth();
+  const { currentTenant } = useTenant();
+  const tenantId = currentTenant?.id ?? null;
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -48,13 +52,14 @@ export const useCallRecordings = (leadId?: string | null) => {
   };
 
   const { data: recordings = [], isLoading, error } = useQuery({
-    queryKey: ['call_recordings', leadId, user?.id],
+    queryKey: ['call_recordings', leadId, user?.id, tenantId],
     queryFn: async () => {
-      if (!user) return [];
+      if (!user || !tenantId) return [];
       
       let query = supabase
         .from('call_recordings')
         .select('*')
+        .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false });
       
       if (leadId) {
@@ -65,16 +70,17 @@ export const useCallRecordings = (leadId?: string | null) => {
       if (error) throw error;
       return data as CallRecording[];
     },
-    enabled: !!user,
+    enabled: !!user && !!tenantId,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
   });
 
   const createRecording = useMutation({
-    mutationFn: async (recording: Omit<CallRecording, 'id' | 'created_at' | 'processed_at'>) => {
+    mutationFn: async (recording: Omit<CallRecording, 'id' | 'created_at' | 'processed_at' | 'tenant_id'>) => {
+      if (!tenantId) throw new Error('No tenant selected');
       const { data, error } = await supabase
         .from('call_recordings')
-        .insert(recording)
+        .insert({ ...recording, tenant_id: tenantId })
         .select()
         .single();
       

@@ -123,7 +123,7 @@ interface Profile {
 }
 
 interface UserWithRole extends Profile {
-  role: 'admin' | 'sales' | null;
+  role: 'super_admin' | 'admin' | 'sales' | null;
 }
 
 type ZohoConnectorState = {
@@ -167,14 +167,14 @@ const AdminDashboard = () => {
     email: '',
     password: '',
     fullName: '',
-    role: 'sales' as 'admin' | 'sales',
+    role: 'sales' as 'super_admin' | 'admin' | 'sales',
   });
 
   const [editUserData, setEditUserData] = useState({
     id: '',
     email: '',
     fullName: '',
-    role: 'sales' as 'admin' | 'sales',
+    role: 'sales' as 'super_admin' | 'admin' | 'sales',
     isActive: true,
   });
 
@@ -207,12 +207,24 @@ const AdminDashboard = () => {
   const [isInvitingMember, setIsInvitingMember] = useState(false);
   const [tenantNameEdit, setTenantNameEdit] = useState(currentTenant?.name || '');
   const [isEditingTenant, setIsEditingTenant] = useState(false);
+  const [newTenantName, setNewTenantName] = useState('');
+  const [newTenantSlug, setNewTenantSlug] = useState('');
+  const [newTenantManagerEmail, setNewTenantManagerEmail] = useState('');
+
+  const isSuperAdmin = role === 'super_admin';
+  const canAccessAdminDashboard = role === 'admin' || role === 'super_admin';
 
   useEffect(() => {
-    if (!isLoading && (!user || role !== 'admin')) {
+    if (!isLoading && (!user || !canAccessAdminDashboard)) {
       navigate('/admin/login');
     }
-  }, [isLoading, navigate, role, user]);
+  }, [canAccessAdminDashboard, isLoading, navigate, role, user]);
+
+  useEffect(() => {
+    if (!isSuperAdmin && (activeSection === 'tenants' || activeSection === 'team')) {
+      setActiveSection('overview');
+    }
+  }, [activeSection, isSuperAdmin]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem('admin-zoho-connector');
@@ -265,7 +277,7 @@ const AdminDashboard = () => {
         role: rolesMap.get(profile.id) || null,
       })) as UserWithRole[];
     },
-    enabled: role === 'admin',
+    enabled: canAccessAdminDashboard,
   });
 
   const {
@@ -289,7 +301,7 @@ const AdminDashboard = () => {
 
       return data as ZohoConnectionStatus;
     },
-    enabled: role === 'admin',
+    enabled: canAccessAdminDashboard,
   });
 
   useEffect(() => {
@@ -302,58 +314,66 @@ const AdminDashboard = () => {
   }, [zohoStatus]);
 
   const { data: leads = [] } = useQuery({
-    queryKey: ['admin-leads'],
+    queryKey: ['admin-leads', currentTenant?.id],
     queryFn: async () => {
+      if (!currentTenant) return [];
       const { data, error } = await supabase
         .from('leads')
         .select('*')
+        .eq('tenant_id', currentTenant.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data as Lead[];
     },
-    enabled: role === 'admin',
+    enabled: canAccessAdminDashboard && !!currentTenant,
   });
 
   const { data: activities = [] } = useQuery({
-    queryKey: ['admin-activity-feed'],
+    queryKey: ['admin-activity-feed', currentTenant?.id],
     queryFn: async () => {
+      if (!currentTenant) return [];
       const { data, error } = await supabase
         .from('lead_activities')
         .select('*')
+        .eq('tenant_id', currentTenant.id)
         .order('created_at', { ascending: false })
         .limit(200);
       if (error) throw error;
       return data as LeadActivity[];
     },
-    enabled: role === 'admin',
+    enabled: canAccessAdminDashboard && !!currentTenant,
   });
 
   const { data: callLogs = [] } = useQuery({
-    queryKey: ['admin-call-logs'],
+    queryKey: ['admin-call-logs', currentTenant?.id],
     queryFn: async () => {
+      if (!currentTenant) return [];
       const { data, error } = await supabase
         .from('call_logs')
         .select('*')
+        .eq('tenant_id', currentTenant.id)
         .order('created_at', { ascending: false })
         .limit(5000);
       if (error) throw error;
       return data as CallLog[];
     },
-    enabled: role === 'admin',
+    enabled: canAccessAdminDashboard && !!currentTenant,
   });
 
   const { data: leadTasks = [] } = useQuery({
-    queryKey: ['admin-lead-tasks'],
+    queryKey: ['admin-lead-tasks', currentTenant?.id],
     queryFn: async () => {
+      if (!currentTenant) return [];
       const { data, error } = await supabase
         .from('lead_tasks')
         .select('*')
+        .eq('tenant_id', currentTenant.id)
         .order('created_at', { ascending: false })
         .limit(500);
       if (error) throw error;
       return data as LeadTask[];
     },
-    enabled: role === 'admin',
+    enabled: canAccessAdminDashboard && !!currentTenant,
   });
 
   const leadMap = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads]);
@@ -621,7 +641,7 @@ const AdminDashboard = () => {
   }, [filteredCallLogs, leadMap, userMap]);
 
   const createUser = useMutation({
-    mutationFn: async (data: { email: string; password: string; fullName: string; role: 'admin' | 'sales' }) => {
+    mutationFn: async (data: { email: string; password: string; fullName: string; role: 'super_admin' | 'admin' | 'sales' }) => {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
@@ -653,7 +673,7 @@ const AdminDashboard = () => {
   });
 
   const updateUser = useMutation({
-    mutationFn: async (data: { id: string; fullName: string; role: 'admin' | 'sales'; isActive: boolean }) => {
+    mutationFn: async (data: { id: string; fullName: string; role: 'super_admin' | 'admin' | 'sales'; isActive: boolean }) => {
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ full_name: data.fullName, is_active: data.isActive })
@@ -1089,9 +1109,13 @@ const AdminDashboard = () => {
     { id: 'call-activity', label: 'Reports', caption: 'Call insights', icon: Activity },
     { id: 'activity', label: 'Activity', caption: 'Audit trail', icon: Activity },
     { id: 'marketplace', label: 'Integrations', caption: 'CRM sync', icon: Link2 },
-    { id: 'tenants', label: 'Tenants', caption: 'Organization settings', icon: Building },
-    { id: 'team', label: 'Tenant Users', caption: 'Invites and roles', icon: Users },
     { id: 'settings', label: 'Users', caption: 'Platform users', icon: Settings },
+    ...(isSuperAdmin
+      ? [
+          { id: 'tenants', label: 'Tenants', caption: 'Organization settings', icon: Building },
+          { id: 'team', label: 'Tenant Users', caption: 'Invites and roles', icon: Users },
+        ]
+      : []),
   ];
 
   const activeSectionTitle =
@@ -1837,6 +1861,119 @@ const AdminDashboard = () => {
 
   const renderTenants = () => (
     <div className="space-y-4">
+      {!isSuperAdmin ? (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <div>
+                <p className="font-medium text-amber-900">Super admin only</p>
+                <p className="text-sm text-amber-700">Only super admins can access tenant management and create tenants.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {isSuperAdmin ? (
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="border-b bg-muted/20">
+            <CardTitle>Add Tenant</CardTitle>
+            <CardDescription>Create a tenant and assign one tenant manager (admin).</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-6">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    if (!newTenantManagerEmail.trim()) {
+                      toast({ title: 'Missing details', description: 'Tenant manager email is required', variant: 'destructive' });
+                      return;
+                    }
+                    const suffix = Math.random().toString(36).slice(2, 7);
+                    const quickName = `Tenant ${suffix.toUpperCase()}`;
+                    const quickSlug = `tenant-${suffix}`;
+                    const createdTenant = await createTenant(quickName, quickSlug);
+                    await inviteMember(createdTenant.id, newTenantManagerEmail.trim(), 'admin');
+                    toast({ title: 'Success', description: `Created ${quickName} and invited tenant manager` });
+                    setNewTenantManagerEmail('');
+                  } catch (error: any) {
+                    toast({ title: 'Error', description: error.message || 'Failed to create tenant', variant: 'destructive' });
+                  }
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Quick Create
+              </Button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="new-tenant-name">Tenant Name</Label>
+                <Input
+                  id="new-tenant-name"
+                  value={newTenantName}
+                  placeholder="Acme India"
+                  onChange={(e) => {
+                    const nextName = e.target.value;
+                    setNewTenantName(nextName);
+                    if (!newTenantSlug) {
+                      setNewTenantSlug(
+                        nextName
+                          .toLowerCase()
+                          .trim()
+                          .replace(/[^a-z0-9]+/g, '-')
+                          .replace(/^-+|-+$/g, '')
+                      );
+                    }
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-tenant-slug">Tenant Slug</Label>
+                <Input
+                  id="new-tenant-slug"
+                  value={newTenantSlug}
+                  placeholder="acme-india"
+                  onChange={(e) => setNewTenantSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-tenant-manager-email">Tenant Manager Email (Admin)</Label>
+                <Input
+                  id="new-tenant-manager-email"
+                  type="email"
+                  value={newTenantManagerEmail}
+                  placeholder="manager@company.com"
+                  onChange={(e) => setNewTenantManagerEmail(e.target.value)}
+                />
+              </div>
+            </div>
+            <Button
+              onClick={async () => {
+                if (!newTenantName.trim() || !newTenantSlug.trim() || !newTenantManagerEmail.trim()) {
+                  toast({ title: 'Missing details', description: 'Tenant name, slug, and manager email are required', variant: 'destructive' });
+                  return;
+                }
+                try {
+                  const createdTenant = await createTenant(newTenantName.trim(), newTenantSlug.trim());
+                  await inviteMember(createdTenant.id, newTenantManagerEmail.trim(), 'admin');
+                  toast({ title: 'Success', description: 'Tenant created and manager invite sent' });
+                  setNewTenantName('');
+                  setNewTenantSlug('');
+                  setNewTenantManagerEmail('');
+                } catch (error: any) {
+                  toast({ title: 'Error', description: error.message || 'Failed to create tenant', variant: 'destructive' });
+                }
+              }}
+            >
+              Create Tenant
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {!currentTenant ? (
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="pt-6">
@@ -1847,10 +1984,10 @@ const AdminDashboard = () => {
                 <p className="text-sm text-amber-700">You need to create or select a tenant to use this workspace.</p>
               </div>
             </div>
-            {tenants.length === 0 ? (
+            {isSuperAdmin && tenants.length === 0 ? (
               <Button className="mt-4" onClick={async () => {
                 try {
-                  const newTenant = await createTenant('My Organization', 'my-org-' + Math.random().toString(36).substring(7));
+                  await createTenant('My Organization', 'my-org-' + Math.random().toString(36).substring(7));
                   toast({ title: 'Success', description: 'Tenant created successfully' });
                 } catch (error) {
                   toast({ title: 'Error', description: 'Failed to create tenant', variant: 'destructive' });
@@ -1864,7 +2001,7 @@ const AdminDashboard = () => {
         </Card>
       ) : null}
 
-      {currentTenant && (
+      {isSuperAdmin && currentTenant && (
         <>
           {/* Tenant Switcher */}
           {tenants.length > 1 && (
@@ -1971,6 +2108,22 @@ const AdminDashboard = () => {
   );
 
   const renderTeam = () => {
+    if (!isSuperAdmin) {
+      return (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <div>
+                <p className="font-medium text-amber-900">Super admin only</p>
+                <p className="text-sm text-amber-700">Tenant users can only be managed by super admins.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
     if (!currentTenant) {
       return (
         <Card className="border-amber-200 bg-amber-50">
@@ -1987,13 +2140,17 @@ const AdminDashboard = () => {
       );
     }
 
+    const tenantAlreadyHasManager = tenantMembers.some(
+      (member) => member.role === 'admin' || member.role === 'manager'
+    );
+
     return (
       <div className="space-y-4">
         {/* Invite Member */}
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="border-b bg-muted/20">
             <CardTitle>Invite Team Member</CardTitle>
-            <CardDescription>Send an invite link to add new members to your team.</CardDescription>
+            <CardDescription>Each tenant supports one manager/admin role. Additional users should be added as members.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 pt-6">
             <div className="grid gap-4">
@@ -2016,8 +2173,8 @@ const AdminDashboard = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="manager">Manager</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="manager" disabled={tenantAlreadyHasManager}>Manager</SelectItem>
+                    <SelectItem value="admin" disabled={tenantAlreadyHasManager}>Admin</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -2027,6 +2184,14 @@ const AdminDashboard = () => {
               onClick={async () => {
                 if (!inviteEmail) {
                   toast({ title: 'Error', description: 'Please enter an email address' });
+                  return;
+                }
+                if ((inviteRole === 'admin' || inviteRole === 'manager') && tenantAlreadyHasManager) {
+                  toast({
+                    title: 'Manager already assigned',
+                    description: 'This tenant already has a manager/admin. Remove or demote them first.',
+                    variant: 'destructive',
+                  });
                   return;
                 }
                 try {
@@ -2195,7 +2360,7 @@ const AdminDashboard = () => {
                     <Label>Role</Label>
                     <Select
                       value={newUserData.role}
-                      onValueChange={(value: 'admin' | 'sales') => setNewUserData((prev) => ({ ...prev, role: value }))}
+                      onValueChange={(value: 'super_admin' | 'admin' | 'sales') => setNewUserData((prev) => ({ ...prev, role: value }))}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -2203,6 +2368,7 @@ const AdminDashboard = () => {
                       <SelectContent>
                         <SelectItem value="sales">Sales</SelectItem>
                         <SelectItem value="admin">Admin</SelectItem>
+                        {isSuperAdmin ? <SelectItem value="super_admin">Super Admin</SelectItem> : null}
                       </SelectContent>
                     </Select>
                   </div>
@@ -2299,7 +2465,9 @@ const AdminDashboard = () => {
                       <TableCell className="font-medium">{entry.full_name || 'No name'}</TableCell>
                       <TableCell className="text-muted-foreground">{entry.email}</TableCell>
                       <TableCell>
-                        <Badge variant={entry.role === 'admin' ? 'default' : 'secondary'}>{entry.role || 'No role'}</Badge>
+                        <Badge variant={entry.role === 'super_admin' ? 'default' : entry.role === 'admin' ? 'default' : 'secondary'}>
+                          {entry.role || 'No role'}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         {entry.is_active ? (
@@ -2403,7 +2571,7 @@ const AdminDashboard = () => {
     );
   }
 
-  if (!user || role !== 'admin') {
+  if (!user || !canAccessAdminDashboard) {
     return null;
   }
 
@@ -2532,14 +2700,18 @@ const AdminDashboard = () => {
               <Link2 className="mr-2 h-4 w-4" />
               Integrations
             </CommandItem>
-            <CommandItem onSelect={() => { setActiveSection('tenants'); setCommandOpen(false); }}>
-              <Building className="mr-2 h-4 w-4" />
-              Tenants
-            </CommandItem>
-            <CommandItem onSelect={() => { setActiveSection('team'); setCommandOpen(false); }}>
-              <Users className="mr-2 h-4 w-4" />
-              Tenant Users
-            </CommandItem>
+            {isSuperAdmin ? (
+              <CommandItem onSelect={() => { setActiveSection('tenants'); setCommandOpen(false); }}>
+                <Building className="mr-2 h-4 w-4" />
+                Tenants
+              </CommandItem>
+            ) : null}
+            {isSuperAdmin ? (
+              <CommandItem onSelect={() => { setActiveSection('team'); setCommandOpen(false); }}>
+                <Users className="mr-2 h-4 w-4" />
+                Tenant Users
+              </CommandItem>
+            ) : null}
             <CommandItem onSelect={() => { setActiveSection('settings'); setCommandOpen(false); }}>
               <Settings className="mr-2 h-4 w-4" />
               Users
@@ -2588,7 +2760,7 @@ const AdminDashboard = () => {
               <Label>Role</Label>
               <Select
                 value={editUserData.role}
-                onValueChange={(value: 'admin' | 'sales') => setEditUserData((prev) => ({ ...prev, role: value }))}
+                onValueChange={(value: 'super_admin' | 'admin' | 'sales') => setEditUserData((prev) => ({ ...prev, role: value }))}
                 disabled={editUserData.id === user?.id}
               >
                 <SelectTrigger>
@@ -2597,6 +2769,7 @@ const AdminDashboard = () => {
                 <SelectContent>
                   <SelectItem value="sales">Sales</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
+                  {isSuperAdmin ? <SelectItem value="super_admin">Super Admin</SelectItem> : null}
                 </SelectContent>
               </Select>
             </div>

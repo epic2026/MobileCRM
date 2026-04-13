@@ -3,7 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { isNativeApp } from '@/services/nativePlugins';
 
-type AppRole = 'admin' | 'sales' | null;
+type AppRole = 'super_admin' | 'admin' | 'sales' | null;
 
 const isLikelyJwt = (token: string | null | undefined) =>
   typeof token === 'string' && token.split('.').length === 3;

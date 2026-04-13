@@ -60,7 +60,7 @@ interface TenantContextType {
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
 
 export const TenantProvider = ({ children }: { children: ReactNode }) => {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantRole, setTenantRole] = useState<TenantRole | null>(null);
@@ -71,6 +71,20 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
   const fetchUserTenants = useCallback(async (userId: string) => {
     try {
       setIsLoadingTenants(true);
+
+      if (role === 'super_admin') {
+        const { data: allTenants, error: allTenantsError } = await supabase
+          .from('tenants')
+          .select('*')
+          .order('created_at', { ascending: true });
+
+        if (allTenantsError) {
+          console.error('Error fetching all tenants for super admin:', allTenantsError);
+          return [];
+        }
+
+        return allTenants || [];
+      }
 
       // Get tenants where user is owner or member
       const { data: ownedTenants, error: ownError } = await supabase
@@ -112,7 +126,7 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error fetching tenants:', error);
       return [];
     }
-  }, []);
+  }, [role]);
 
   // Fetch tenant members
   const fetchTenantMembers = useCallback(async (tenantId: string) => {
@@ -268,6 +282,7 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
   const createTenant = useCallback(
     async (name: string, slug: string): Promise<Tenant> => {
       if (!user) throw new Error('User not authenticated');
+      if (role !== 'super_admin') throw new Error('Only super admins can create tenants');
 
       try {
         const { data, error } = await supabase
@@ -306,12 +321,14 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
         throw error;
       }
     },
-    [user, tenants, switchTenant]
+    [role, user, tenants, switchTenant]
   );
 
   // Update tenant
   const updateTenant = useCallback(
     async (tenantId: string, updates: Partial<Tenant>) => {
+      if (role !== 'super_admin') throw new Error('Only super admins can update tenants');
+
       try {
         const { error } = await supabase
           .from('tenants')
@@ -333,13 +350,14 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
         throw error;
       }
     },
-    [currentTenant, tenants]
+    [currentTenant, role, tenants]
   );
 
   // Invite member
   const inviteMember = useCallback(
-    async (tenantId: string, email: string, role: TenantRole) => {
+    async (tenantId: string, email: string, inviteRole: TenantRole) => {
       if (!user) throw new Error('User not authenticated');
+      if (role !== 'super_admin') throw new Error('Only super admins can invite tenant users');
 
       try {
         const token = Math.random().toString(36).substring(2, 15);
@@ -350,7 +368,7 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
           .insert({
             tenant_id: tenantId,
             email,
-            role,
+            role: inviteRole,
             token,
             expires_at: expiresAt,
             created_by: user.id,
@@ -365,11 +383,13 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
         throw error;
       }
     },
-    [user]
+    [user, role]
   );
 
   // Remove member
   const removeMember = useCallback(async (tenantId: string, userId: string) => {
+    if (role !== 'super_admin') throw new Error('Only super admins can remove tenant users');
+
     try {
       const { error } = await supabase
         .from('tenant_members')
@@ -384,22 +404,24 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error removing member:', error);
       throw error;
     }
-  }, [tenantMembers]);
+  }, [role, tenantMembers]);
 
   // Update member role
   const updateMemberRole = useCallback(
-    async (tenantId: string, userId: string, role: TenantRole) => {
+    async (tenantId: string, userId: string, nextRole: TenantRole) => {
+      if (role !== 'super_admin') throw new Error('Only super admins can update tenant user roles');
+
       try {
         const { error } = await supabase
           .from('tenant_members')
-          .update({ role })
+          .update({ role: nextRole })
           .eq('tenant_id', tenantId)
           .eq('user_id', userId);
 
         if (error) throw error;
 
         const updatedMembers = tenantMembers.map((m) =>
-          m.user_id === userId ? { ...m, role } : m
+          m.user_id === userId ? { ...m, role: nextRole } : m
         );
         setTenantMembers(updatedMembers);
       } catch (error) {
@@ -407,7 +429,7 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
         throw error;
       }
     },
-    [tenantMembers]
+    [role, tenantMembers]
   );
 
   // Accept invite

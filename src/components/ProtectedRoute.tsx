@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredRole?: 'admin' | 'sales';
+  requiredRole?: 'super_admin' | 'admin' | 'sales';
 }
 
 const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
@@ -24,27 +24,42 @@ const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
     }
   }, [isLoading, user]);
 
+  const hasRequiredRole = useMemo(() => {
+    if (!requiredRole) return true;
+    if (!role) return false;
+
+    if (requiredRole === 'super_admin') {
+      return role === 'super_admin';
+    }
+
+    if (requiredRole === 'admin') {
+      return role === 'admin' || role === 'super_admin';
+    }
+
+    return role === 'sales';
+  }, [requiredRole, role]);
+
   const redirectTarget = useMemo(() => {
     if (isLoading || isRoleLoading) return null;
 
     if (!user) {
-      return requiredRole === 'admin' ? '/admin/login' : '/auth';
-    }
-
-    if (role === 'admin' && requiredRole !== 'admin') {
-      return '/admin';
-    }
-
-    if (role === 'sales' && requiredRole === 'admin') {
-      return '/';
+      return requiredRole === 'sales' ? '/auth' : '/admin/login';
     }
 
     if (!role) {
-      return requiredRole === 'admin' ? '/admin/login' : '/auth';
+      return requiredRole === 'sales' ? '/auth' : '/admin/login';
     }
 
-    return null;
-  }, [isLoading, isRoleLoading, user, role, requiredRole]);
+    if (hasRequiredRole) {
+      return null;
+    }
+
+    if (role === 'sales') {
+      return '/';
+    }
+
+    return '/admin';
+  }, [hasRequiredRole, isLoading, isRoleLoading, requiredRole, role, user]);
 
   useEffect(() => {
     if (redirectTarget) {
@@ -64,8 +79,7 @@ const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
     !!redirectTarget ||
     !user ||
     !role ||
-    (role === 'admin' && requiredRole !== 'admin') ||
-    (role === 'sales' && requiredRole === 'admin')
+    !hasRequiredRole
   ) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">

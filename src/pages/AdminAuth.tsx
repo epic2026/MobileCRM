@@ -47,7 +47,7 @@ const AdminAuth = () => {
 
   useEffect(() => {
     if (user && !isLoading && role) {
-      if (role === 'admin') {
+      if (role === 'admin' || role === 'super_admin') {
         navigate('/admin');
       } else {
         toast({

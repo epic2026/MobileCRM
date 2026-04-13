@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTenant } from '@/contexts/TenantContext';
 import { useCallRecordings } from '@/hooks/useCallRecordings';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -18,11 +19,12 @@ interface CallRecordingStartupProps {
 const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true }: CallRecordingStartupProps) => {
   const hasRunRef = useRef(false);
   const { user } = useAuth();
+  const { currentTenant } = useTenant();
   const { uploadRecording, createRecording, analyzeRecording } = useCallRecordings();
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!enableAutoImport || !isNativeApp() || !user || hasRunRef.current) return;
+    if (!enableAutoImport || !isNativeApp() || !user || !currentTenant || hasRunRef.current) return;
 
     let timeoutId: number | undefined;
     let frameId: number | undefined;
@@ -43,7 +45,7 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
           return;
         }
 
-        const scanned = await performSystemRecordingScan({ userId: user.id });
+        const scanned = await performSystemRecordingScan({ userId: user.id, tenantId: currentTenant.id });
         const autoImportCandidates = scanned.filter((recording) => recording.confidence !== 'low');
 
         let importedCount = 0;
@@ -54,6 +56,7 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
             const imported = await importSystemRecording({
               recording,
               userId: user.id,
+              tenantId: currentTenant.id,
               uploadRecording,
               createRecording: createRecording.mutateAsync,
               analyzeRecording: analyzeRecording.mutate,
@@ -98,11 +101,11 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
         window.clearTimeout(timeoutId);
       }
     };
-  }, [enableAutoImport, user?.id]);
+  }, [enableAutoImport, currentTenant?.id, user?.id]);
 
   // Manual import trigger (called by AI agent or user action)
   useEffect(() => {
-    if (manualImportTrigger === 0 || !isNativeApp() || !user) return;
+    if (manualImportTrigger === 0 || !isNativeApp() || !user || !currentTenant) return;
 
     let cancelled = false;
 
@@ -120,7 +123,7 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
           return;
         }
 
-        const scanned = await performSystemRecordingScan({ userId: user.id });
+        const scanned = await performSystemRecordingScan({ userId: user.id, tenantId: currentTenant.id });
         const candidates = scanned.filter((r) => r.confidence !== 'low');
 
         let importedCount = 0;
@@ -130,6 +133,7 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
             const imported = await importSystemRecording({
               recording,
               userId: user.id,
+              tenantId: currentTenant.id,
               uploadRecording,
               createRecording: createRecording.mutateAsync,
               analyzeRecording: analyzeRecording.mutate,
@@ -160,7 +164,7 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manualImportTrigger]);
+  }, [manualImportTrigger, currentTenant?.id, user?.id]);
 
   return null;
 };

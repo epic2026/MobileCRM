@@ -24,6 +24,7 @@ export type Database = {
           notes: string | null
           outcome: string | null
           phone: string
+          tenant_id: string | null
           type: Database["public"]["Enums"]["call_type"]
           user_id: string | null
         }
@@ -36,6 +37,7 @@ export type Database = {
           notes?: string | null
           outcome?: string | null
           phone: string
+          tenant_id?: string | null
           type: Database["public"]["Enums"]["call_type"]
           user_id?: string | null
         }
@@ -48,6 +50,7 @@ export type Database = {
           notes?: string | null
           outcome?: string | null
           phone?: string
+          tenant_id?: string | null
           type?: Database["public"]["Enums"]["call_type"]
           user_id?: string | null
         }
@@ -73,6 +76,7 @@ export type Database = {
           id: string
           lead_id: string | null
           processed_at: string | null
+          tenant_id: string | null
           transcription: string | null
           user_id: string | null
         }
@@ -87,6 +91,7 @@ export type Database = {
           id?: string
           lead_id?: string | null
           processed_at?: string | null
+          tenant_id?: string | null
           transcription?: string | null
           user_id?: string | null
         }
@@ -101,6 +106,7 @@ export type Database = {
           id?: string
           lead_id?: string | null
           processed_at?: string | null
+          tenant_id?: string | null
           transcription?: string | null
           user_id?: string | null
         }
@@ -128,6 +134,7 @@ export type Database = {
           id: string
           lead_id: string
           metadata: Json | null
+          tenant_id: string | null
           title: string
           type: string
           user_id: string | null
@@ -138,6 +145,7 @@ export type Database = {
           id?: string
           lead_id: string
           metadata?: Json | null
+          tenant_id?: string | null
           title: string
           type: string
           user_id?: string | null
@@ -148,6 +156,7 @@ export type Database = {
           id?: string
           lead_id?: string
           metadata?: Json | null
+          tenant_id?: string | null
           title?: string
           type?: string
           user_id?: string | null
@@ -170,6 +179,7 @@ export type Database = {
           id: string
           lead_id: string
           status: Database["public"]["Enums"]["task_status"]
+          tenant_id: string | null
           title: string
           updated_at: string
           user_id: string | null
@@ -181,6 +191,7 @@ export type Database = {
           id?: string
           lead_id: string
           status?: Database["public"]["Enums"]["task_status"]
+          tenant_id?: string | null
           title: string
           updated_at?: string
           user_id?: string | null
@@ -192,6 +203,7 @@ export type Database = {
           id?: string
           lead_id?: string
           status?: Database["public"]["Enums"]["task_status"]
+          tenant_id?: string | null
           title?: string
           updated_at?: string
           user_id?: string | null
@@ -217,6 +229,7 @@ export type Database = {
           phone: string
           source: string | null
           status: Database["public"]["Enums"]["lead_status"]
+          tenant_id: string | null
           updated_at: string
           user_id: string | null
           value: number | null
@@ -231,6 +244,7 @@ export type Database = {
           phone: string
           source?: string | null
           status?: Database["public"]["Enums"]["lead_status"]
+          tenant_id?: string | null
           updated_at?: string
           user_id?: string | null
           value?: number | null
@@ -245,6 +259,7 @@ export type Database = {
           phone?: string
           source?: string | null
           status?: Database["public"]["Enums"]["lead_status"]
+          tenant_id?: string | null
           updated_at?: string
           user_id?: string | null
           value?: number | null
@@ -321,7 +336,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "sales"
+      app_role: "super_admin" | "admin" | "sales"
       call_type: "incoming" | "outgoing" | "missed"
       lead_status:
         | "new"
@@ -459,7 +474,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "sales"],
+      app_role: ["super_admin", "admin", "sales"],
       call_type: ["incoming", "outgoing", "missed"],
       lead_status: [
         "new",
