@@ -28,18 +28,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchUserRole = async (userId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .single();
+      const { data, error } = await supabase.rpc('get_user_role', {
+        _user_id: userId,
+      });
 
       if (error) {
         console.log('No role found for user:', error.message);
         return null;
       }
 
-      return data?.role as AppRole;
+      return (data as AppRole) || null;
     } catch (err) {
       console.error('Error fetching role:', err);
       return null;
