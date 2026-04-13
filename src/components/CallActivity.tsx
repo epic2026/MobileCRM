@@ -1,6 +1,8 @@
 import { useDeferredValue, useState } from 'react';
 import { PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, TrendingUp, Phone, Calendar, Filter } from 'lucide-react';
 import { useCallLogs, CallLogEntry, CallType } from '@/hooks/useCallLogs';
+import { useCallRecordings } from '@/hooks/useCallRecordings';
+import CallRecordingPlayer from '@/components/CallRecordingPlayer';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -64,9 +66,15 @@ const CallIcon = ({ type }: { type: CallType }) => {
 
 const CallActivity = ({ onCall }: CallActivityProps) => {
   const { callLogs, isLoading } = useCallLogs();
+  const { recordings } = useCallRecordings();
   const [typeFilter, setTypeFilter] = useState<CallType | 'all'>('all');
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all');
   const deferredLogs = useDeferredValue(callLogs);
+  const recordingsByCallLogId = new Map(
+    recordings
+      .filter((recording) => !!recording.call_log_id)
+      .map((recording) => [recording.call_log_id as string, recording])
+  );
 
   const now = new Date();
   const todayKey = now.toDateString();
@@ -288,6 +296,21 @@ const CallActivity = ({ onCall }: CallActivityProps) => {
                     {log.notes && (
                       <p className="text-xs text-muted-foreground italic">"{log.notes}"</p>
                     )}
+                  </div>
+                )}
+
+                {recordingsByCallLogId.get(log.id) && (
+                  <div className="mt-3 rounded-lg border border-border/60 bg-background/40 p-2.5">
+                    <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Phone className="h-3 w-3" />
+                        Recording
+                      </div>
+                      <Badge variant="secondary" className="text-[10px]">AI Ready</Badge>
+                    </div>
+                    <div onClick={(event) => event.stopPropagation()}>
+                      <CallRecordingPlayer recording={recordingsByCallLogId.get(log.id)!} compact />
+                    </div>
                   </div>
                 )}
               </div>

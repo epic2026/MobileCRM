@@ -98,6 +98,42 @@ const markAnalysisFailed = async (
   }
 };
 
+const persistFallbackAnalysis = async (
+  supabase: ReturnType<typeof createClient> | null,
+  recordingId: string | null,
+  callDetails: { contactName?: string; duration?: number; callType?: string } | null,
+  transcription: string | null,
+  reason: string,
+) => {
+  if (!supabase || !recordingId) return;
+
+  const duration = Number(callDetails?.duration || 0);
+  const contact = callDetails?.contactName || 'the contact';
+  const summary = normalizeSummaryTo50Words(
+    `Call recording captured for ${contact}. Duration was ${duration} seconds. AI full analysis is temporarily unavailable, so this is a fallback summary based on available metadata and transcript fragments. Review recording playback, verify intent, log outcomes, and create follow-up tasks to maintain sales momentum while service recovers smoothly.`
+  );
+
+  const actions = [
+    'Replay the recording and confirm customer intent plus decision timeline',
+    'Update lead notes with key objections and promised follow-up points',
+    'Schedule a follow-up call and assign owner with due date',
+  ];
+
+  const { error } = await supabase
+    .from('call_recordings')
+    .update({
+      ai_summary: `${summary} [Fallback mode: ${trimErrorMessage(reason)}]`,
+      ai_next_actions: actions,
+      transcription: transcription,
+      processed_at: new Date().toISOString(),
+    })
+    .eq('id', recordingId);
+
+  if (error) {
+    console.error('Failed to persist fallback AI state:', error);
+  }
+};
+
 const mimeTypeForPath = (path: string) => {
   const normalized = path.toLowerCase();
   if (normalized.endsWith('.m4a')) return 'audio/mp4';
@@ -207,10 +243,6 @@ serve(async (req) => {
     const { recordingId, transcription, callDetails } = await req.json();
     requestRecordingId = recordingId ?? null;
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    
-    if (!OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is not configured");
-    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -240,7 +272,7 @@ serve(async (req) => {
         finalTranscription = null;
       }
 
-      if (!finalTranscription && recordingRow?.file_path) {
+      if (!finalTranscription && recordingRow?.file_path && OPENAI_API_KEY) {
         const transcriptionResult = await transcribeRecording({
           recordingPath: recordingRow.file_path,
           supabase,
@@ -252,8 +284,50 @@ serve(async (req) => {
       }
     }
 
+    if (!OPENAI_API_KEY) {
+      await persistFallbackAnalysis(
+        supabase,
+        recordingId,
+        callDetails,
+        finalTranscription,
+        'OPENAI_API_KEY is not configured',
+      );
+
+      return new Response(
+        JSON.stringify({
+          summary: 'Fallback summary generated because AI service key is unavailable.',
+          next_actions: [
+            'Review call recording manually',
+            'Update lead notes and next follow-up',
+            'Retry AI analysis later',
+          ],
+          fallback: true,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (!finalTranscription || finalTranscription.trim().length < 12) {
-      throw new Error('Unable to produce usable transcript from this recording. Please retry with clearer call audio.');
+      await persistFallbackAnalysis(
+        supabase,
+        recordingId,
+        callDetails,
+        finalTranscription,
+        'Unable to produce usable transcript from this recording',
+      );
+
+      return new Response(
+        JSON.stringify({
+          summary: 'Fallback summary generated because transcript quality was low.',
+          next_actions: [
+            'Replay audio and note key details manually',
+            'Contact lead for clarification on unclear parts',
+            'Retry AI analysis after a better quality recording',
+          ],
+          fallback: true,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const systemPrompt = `You are a sales call analyzer for field sales users.

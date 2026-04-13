@@ -95,13 +95,7 @@ export const useCallRecordings = (leadId?: string | null) => {
       transcription?: string;
       callDetails: { contactName?: string; duration: number; callType: string };
     }) => {
-      const anonToken = import.meta.env.VITE_SUPABASE_ANON_KEY!;
-
       const { data, error } = await supabase.functions.invoke('analyze-call', {
-        headers: {
-          Authorization: `Bearer ${anonToken}`,
-          apikey: anonToken,
-        },
         body: { recordingId, transcription, callDetails }
       });
       
