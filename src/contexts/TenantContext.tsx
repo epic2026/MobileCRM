@@ -499,3 +499,4 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
       {children}
     </TenantContext.Provider>
   );
+};
