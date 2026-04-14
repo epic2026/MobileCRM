@@ -108,7 +108,7 @@ import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
 import type { Database } from '@/integrations/supabase/types';
 
-type AdminSection = 'overview' | 'leads' | 'call-activity' | 'marketplace' | 'activity' | 'tenants' | 'team' | 'settings';
+type AdminSection = 'overview' | 'leads' | 'call-activity' | 'marketplace' | 'activity' | 'tenants' | 'settings';
 type Lead = Database['public']['Tables']['leads']['Row'];
 type LeadActivity = Database['public']['Tables']['lead_activities']['Row'];
 type CallLog = Database['public']['Tables']['call_logs']['Row'];
@@ -120,6 +120,7 @@ interface Profile {
   full_name: string | null;
   is_active: boolean;
   created_at: string;
+  tenant_id?: string | null;
 }
 
 interface UserWithRole extends Profile {
@@ -221,7 +222,7 @@ const AdminDashboard = () => {
   }, [canAccessAdminDashboard, isLoading, navigate, role, user]);
 
   useEffect(() => {
-    if (!isSuperAdmin && (activeSection === 'tenants' || activeSection === 'team')) {
+    if (!isSuperAdmin && activeSection === 'tenants') {
       setActiveSection('overview');
     }
   }, [activeSection, isSuperAdmin]);
@@ -1114,7 +1115,6 @@ const AdminDashboard = () => {
     ...(isSuperAdmin
       ? [
           { id: 'tenants', label: 'Tenants', caption: 'Organization settings', icon: Building },
-          { id: 'team', label: 'Tenant Users', caption: 'Invites and roles', icon: Users },
         ]
       : []),
   ];
@@ -1132,9 +1132,7 @@ const AdminDashboard = () => {
               ? 'Activity'
               : activeSection === 'tenants'
                 ? 'Tenant Settings'
-                : activeSection === 'team'
-                  ? 'Tenant Users'
-                  : 'Users';
+                : 'Users';
 
   const activeSectionDescription =
     activeSection === 'overview'
@@ -1149,9 +1147,7 @@ const AdminDashboard = () => {
               ? 'Audit activity feed across lead actions for admin visibility.'
               : activeSection === 'tenants'
                 ? 'Manage organization settings, branding, and subscription.'
-                : activeSection === 'team'
-                  ? 'Invite tenant users, manage roles, and access controls.'
-                  : 'Create, edit, and manage role/access for sales users.';
+                : 'Create, edit, and manage role/access for sales users.';
 
   const activeSectionCount =
     activeSection === 'overview'
@@ -1166,9 +1162,7 @@ const AdminDashboard = () => {
               ? `${filteredActivities.length} activity events`
               : activeSection === 'tenants'
                 ? currentTenant ? `${tenants.length} tenant(s)` : 'No tenant selected'
-                : activeSection === 'team'
-                  ? `${tenantMembers.length} members`
-                  : `${users.length} users managed`;
+                : `${users.length} users managed`;
 
   const primaryActionLabel =
     activeSection === 'settings'
@@ -2313,6 +2307,17 @@ const AdminDashboard = () => {
     );
   };
 
+  const handleAssignTenant = async (userId: string, tenantId: string) => {
+    const update = tenantId ? { tenant_id: tenantId } : { tenant_id: null };
+    const { error } = await supabase.from('profiles').update(update).eq('id', userId);
+    if (error) {
+      toast({ title: 'Failed to assign tenant', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Tenant assigned', description: 'User tenant has been updated.' });
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    }
+  };
+
   const renderSettings = () => (
     <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
@@ -2453,6 +2458,7 @@ const AdminDashboard = () => {
                     <TableHead>Role</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
+                    <TableHead>Tenant</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -2495,6 +2501,18 @@ const AdminDashboard = () => {
                       </TableCell>
                       <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy')}</TableCell>
                       <TableCell>
+                        <select
+                          value={entry.tenant_id || ''}
+                          onChange={(e) => void handleAssignTenant(entry.id, e.target.value)}
+                          className="rounded border px-2 py-1 text-sm"
+                        >
+                          <option value="">Unassigned</option>
+                          {tenants.map((tenant) => (
+                            <option key={tenant.id} value={tenant.id}>{tenant.name}</option>
+                          ))}
+                        </select>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex justify-end gap-2">
                           <Button size="sm" variant="outline" onClick={() => handleEditUser(entry)}>
                             <Pencil className="mr-1 h-3 w-3" />
@@ -2535,7 +2553,7 @@ const AdminDashboard = () => {
                   ))}
                   {paginatedUsers.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground">
+                      <TableCell colSpan={8} className="text-center text-muted-foreground">
                         No users found.
                       </TableCell>
                     </TableRow>
@@ -2679,7 +2697,6 @@ const AdminDashboard = () => {
               {activeSection === 'marketplace' && renderMarketplace()}
               {activeSection === 'activity' && renderActivity()}
               {activeSection === 'tenants' && renderTenants()}
-              {activeSection === 'team' && renderTeam()}
               {activeSection === 'settings' && renderSettings()}
             </main>
           </div>
@@ -2715,12 +2732,6 @@ const AdminDashboard = () => {
               <CommandItem onSelect={() => { setActiveSection('tenants'); setCommandOpen(false); }}>
                 <Building className="mr-2 h-4 w-4" />
                 Tenants
-              </CommandItem>
-            ) : null}
-            {isSuperAdmin ? (
-              <CommandItem onSelect={() => { setActiveSection('team'); setCommandOpen(false); }}>
-                <Users className="mr-2 h-4 w-4" />
-                Tenant Users
               </CommandItem>
             ) : null}
             <CommandItem onSelect={() => { setActiveSection('settings'); setCommandOpen(false); }}>
