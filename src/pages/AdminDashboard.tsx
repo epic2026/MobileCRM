@@ -203,7 +203,7 @@ const AdminDashboard = () => {
 
   // Tenant management state
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'member' | 'manager' | 'admin'>('member');
+  const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member');
   const [isInvitingMember, setIsInvitingMember] = useState(false);
   const [tenantNameEdit, setTenantNameEdit] = useState(currentTenant?.name || '');
   const [isEditingTenant, setIsEditingTenant] = useState(false);
@@ -2140,9 +2140,7 @@ const AdminDashboard = () => {
       );
     }
 
-    const tenantAlreadyHasManager = tenantMembers.some(
-      (member) => member.role === 'admin' || member.role === 'manager'
-    );
+    const tenantAlreadyHasAdmin = tenantMembers.some((member) => member.role === 'admin');
 
     return (
       <div className="space-y-4">
@@ -2150,7 +2148,7 @@ const AdminDashboard = () => {
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="border-b bg-muted/20">
             <CardTitle>Invite Team Member</CardTitle>
-            <CardDescription>Each tenant supports one manager/admin role. Additional users should be added as members.</CardDescription>
+            <CardDescription>Each tenant supports one admin role. Additional users should be added as users.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 pt-6">
             <div className="grid gap-4">
@@ -2172,9 +2170,8 @@ const AdminDashboard = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="manager" disabled={tenantAlreadyHasManager}>Manager</SelectItem>
-                    <SelectItem value="admin" disabled={tenantAlreadyHasManager}>Admin</SelectItem>
+                    <SelectItem value="member">User</SelectItem>
+                    <SelectItem value="admin" disabled={tenantAlreadyHasAdmin}>Admin</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -2186,10 +2183,10 @@ const AdminDashboard = () => {
                   toast({ title: 'Error', description: 'Please enter an email address' });
                   return;
                 }
-                if ((inviteRole === 'admin' || inviteRole === 'manager') && tenantAlreadyHasManager) {
+                if (inviteRole === 'admin' && tenantAlreadyHasAdmin) {
                   toast({
-                    title: 'Manager already assigned',
-                    description: 'This tenant already has a manager/admin. Remove or demote them first.',
+                    title: 'Admin already assigned',
+                    description: 'This tenant already has an admin. Remove or demote them first.',
                     variant: 'destructive',
                   });
                   return;

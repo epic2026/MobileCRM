@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
-export type TenantRole = 'owner' | 'admin' | 'manager' | 'member';
+export type TenantRole = 'owner' | 'admin' | 'member';
 
 export interface Tenant {
   id: string;
