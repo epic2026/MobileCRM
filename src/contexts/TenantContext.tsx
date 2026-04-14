@@ -500,3 +500,11 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
     </TenantContext.Provider>
   );
 };
+
+export const useTenant = (): TenantContextType => {
+  const context = useContext(TenantContext);
+  if (!context) {
+    throw new Error('useTenant must be used within a TenantProvider');
+  }
+  return context;
+};
