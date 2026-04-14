@@ -488,3 +488,14 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
     createTenant,
     updateTenant,
     inviteMember,
+    removeMember,
+    updateMemberRole,
+    acceptInvite,
+    refreshTenants,
+  };
+
+  return (
+    <TenantContext.Provider value={value}>
+      {children}
+    </TenantContext.Provider>
+  );
