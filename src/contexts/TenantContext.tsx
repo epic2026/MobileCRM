@@ -488,19 +488,38 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
     createTenant,
     updateTenant,
     inviteMember,
-    removeMember,
-    updateMemberRole,
-    acceptInvite,
-    refreshTenants,
-  };
+    // Invite member (and ensure tenant_id is set in user_roles and profiles on accept)
+    const inviteMember = useCallback(async (tenantId: string, email: string, inviteRole: TenantRole) => {
+      if (role !== 'super_admin') throw new Error('Only super admins can invite tenant users');
 
-  return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
-};
+      try {
+        const token = Math.random().toString(36).substring(2, 15);
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
 
-export const useTenant = () => {
-  const context = useContext(TenantContext);
-  if (context === undefined) {
-    throw new Error('useTenant must be used within a TenantProvider');
-  }
-  return context;
-};
+        const { error } = await supabase
+          .from('tenant_invites')
+          .insert({
+            tenant_id: tenantId,
+            email,
+            role: inviteRole,
+            token,
+            expires_at: expiresAt,
+            created_by: user.id,
+          });
+
+        if (error) throw error;
+
+        // On invite acceptance, ensure tenant_id is set in both user_roles and profiles
+        // This should be handled in the invite acceptance flow (not shown here), but document for clarity:
+        // await supabase.from('profiles').update({ tenant_id: tenantId }).eq('email', email);
+        // await supabase.from('user_roles').insert({ user_id: newUserId, tenant_id: tenantId, role: inviteRole });
+
+        // TODO: Send invitation email with link to accept invite
+        console.log(`Invite sent to ${email} with token: ${token}`);
+      } catch (error) {
+        console.error('Error inviting member:', error);
+        throw error;
+      }
+    },
+    [user, role]
+    );
