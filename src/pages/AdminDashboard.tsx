@@ -209,7 +209,7 @@ const AdminDashboard = () => {
   const [isEditingTenant, setIsEditingTenant] = useState(false);
   const [newTenantName, setNewTenantName] = useState('');
   const [newTenantSlug, setNewTenantSlug] = useState('');
-  const [newTenantManagerEmail, setNewTenantManagerEmail] = useState('');
+  const [newTenantManagerId, setNewTenantManagerId] = useState('');
 
   const isSuperAdmin = role === 'super_admin';
   const canAccessAdminDashboard = role === 'admin' || role === 'super_admin';
@@ -378,8 +378,9 @@ const AdminDashboard = () => {
 
   const leadMap = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads]);
   const userMap = useMemo(() => new Map(users.map((entry) => [entry.id, entry])), [users]);
-  const salesUsers = useMemo(
-    () => users.filter((entry) => entry.role === 'sales' && entry.is_active),
+  // Users eligible to be tenant admin (admin or sales, active)
+  const eligibleTenantManagers = useMemo(
+    () => users.filter((entry) => (entry.role === 'admin' || entry.role === 'sales') && entry.is_active),
     [users],
   );
 
@@ -1940,29 +1941,42 @@ const AdminDashboard = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="new-tenant-manager-email">Tenant Manager Email (Admin)</Label>
-                <Input
-                  id="new-tenant-manager-email"
-                  type="email"
-                  value={newTenantManagerEmail}
-                  placeholder="manager@company.com"
-                  onChange={(e) => setNewTenantManagerEmail(e.target.value)}
-                />
+                <Label htmlFor="new-tenant-manager">Tenant Manager (Admin/Sales)</Label>
+                <Select
+                  value={newTenantManagerId}
+                  onValueChange={setNewTenantManagerId}
+                >
+                  <SelectTrigger id="new-tenant-manager">
+                    <SelectValue placeholder="Select user..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {eligibleTenantManagers.length === 0 && (
+                      <SelectItem value="" disabled>No eligible users</SelectItem>
+                    )}
+                    {eligibleTenantManagers.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.full_name || user.email} ({user.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <Button
               onClick={async () => {
-                if (!newTenantName.trim() || !newTenantSlug.trim() || !newTenantManagerEmail.trim()) {
-                  toast({ title: 'Missing details', description: 'Tenant name, slug, and manager email are required', variant: 'destructive' });
+                if (!newTenantName.trim() || !newTenantSlug.trim() || !newTenantManagerId) {
+                  toast({ title: 'Missing details', description: 'Tenant name, slug, and manager are required', variant: 'destructive' });
                   return;
                 }
                 try {
                   const createdTenant = await createTenant(newTenantName.trim(), newTenantSlug.trim());
-                  await inviteMember(createdTenant.id, newTenantManagerEmail.trim(), 'admin');
-                  toast({ title: 'Success', description: 'Tenant created and manager invite sent' });
+                  const selectedUser = eligibleTenantManagers.find(u => u.id === newTenantManagerId);
+                  if (!selectedUser) throw new Error('Selected user not found');
+                  await inviteMember(createdTenant.id, selectedUser.email, 'admin');
+                  toast({ title: 'Success', description: 'Tenant created and manager assigned' });
                   setNewTenantName('');
                   setNewTenantSlug('');
-                  setNewTenantManagerEmail('');
+                  setNewTenantManagerId('');
                 } catch (error: any) {
                   toast({ title: 'Error', description: error.message || 'Failed to create tenant', variant: 'destructive' });
                 }
