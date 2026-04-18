@@ -1621,13 +1621,6 @@ const AdminDashboard = () => {
   const renderCallActivity = () => (
     <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
-        <CardHeader className="space-y-2 border-b bg-card">
-          <CardTitle className="flex items-center gap-2">
-            <Phone className="h-5 w-5" />
-            Call Activity Reports
-          </CardTitle>
-          <CardDescription>Actionable call reporting by user, by lead, and by calendar day.</CardDescription>
-        </CardHeader>
         <CardContent className="space-y-6 pt-4">
           <div className="grid gap-4 xl:grid-cols-[1.8fr_1fr]">
             <Card className="border-border/70 bg-background">
@@ -2056,13 +2049,6 @@ const AdminDashboard = () => {
   const renderMarketplace = () => (
     <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
-        <CardHeader className="border-b bg-muted/20">
-          <CardTitle className="flex items-center gap-2">
-            <Link2 className="h-5 w-5" />
-            Connect Your CRM
-          </CardTitle>
-          <CardDescription>Enterprise CRM synchronization workspace for secure OAuth, auditability, and controlled sync actions.</CardDescription>
-        </CardHeader>
         <CardContent className="space-y-4 pt-4">
           <div className="rounded-xl border bg-background p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -2217,13 +2203,6 @@ const AdminDashboard = () => {
   const renderActivity = () => (
     <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
-        <CardHeader className="border-b bg-muted/20">
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5" />
-            Activity Log
-          </CardTitle>
-          <CardDescription>Audit activity feed across lead actions for admin visibility.</CardDescription>
-        </CardHeader>
         <CardContent className="space-y-4 pt-4">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px_auto]">
             <div className="relative">
@@ -2327,10 +2306,6 @@ const AdminDashboard = () => {
 
       {isSuperAdmin ? (
         <Card className="border-border/80 shadow-sm">
-          <CardHeader className="border-b bg-muted/20">
-            <CardTitle>Add Tenant</CardTitle>
-            <CardDescription>Create a tenant and assign one tenant manager (admin).</CardDescription>
-          </CardHeader>
           <CardContent className="space-y-4 pt-6">
             <div className="grid gap-3 sm:grid-cols-[1fr_200px]">
               <div className="space-y-2">
@@ -2620,10 +2595,6 @@ const AdminDashboard = () => {
       <div className="space-y-4">
         {/* Invite Member */}
         <Card className="border-border/80 shadow-sm">
-          <CardHeader className="border-b bg-muted/20">
-            <CardTitle>Invite Team Member</CardTitle>
-            <CardDescription>Each tenant supports one admin role. Additional users should be added as users.</CardDescription>
-          </CardHeader>
           <CardContent className="space-y-4 pt-6">
             <div className="grid gap-4">
               <div className="space-y-2">
@@ -2787,19 +2758,20 @@ const AdminDashboard = () => {
   const renderSettings = () => (
     <div className="space-y-4">
       <Card className="border-border/80 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/20">
-            <div>
-              <CardTitle>User Settings</CardTitle>
-              <CardDescription>Create, edit, and manage role/access for sales users.</CardDescription>
-            </div>
-            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add User
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
+          <CardContent className="pt-4">
+            <div className="mb-4 flex flex-row items-center justify-between">
+              <div>
+                <h3 className="font-semibold">User Settings</h3>
+                <p className="text-sm text-muted-foreground">Create, edit, and manage role/access for sales users.</p>
+              </div>
+              <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add User
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                   <DialogTitle>Create Sales User</DialogTitle>
                   <DialogDescription>Add a new user account and role.</DialogDescription>
@@ -2860,8 +2832,7 @@ const AdminDashboard = () => {
                 </form>
               </DialogContent>
             </Dialog>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-4">
+            </div>
             <div className="rounded-xl border p-4">
               <p className="mb-2 text-sm font-semibold">Permissions Matrix</p>
               <div className="grid gap-2 md:grid-cols-2">
