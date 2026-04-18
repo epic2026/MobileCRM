@@ -1800,7 +1800,7 @@ const AdminDashboard = () => {
             </div>
           ) : null}
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="border-border/70">
+          </div>
 
           <Tabs value={callReportView} onValueChange={(value) => setCallReportView(value as typeof callReportView)}>
             <TabsList>
