@@ -1620,169 +1620,139 @@ const AdminDashboard = () => {
 
   const renderCallActivity = () => (
     <div className="space-y-4">
-      <Card className="border-border/80 shadow-sm">
-        <CardContent className="space-y-6 pt-4">
-          <div className="grid gap-4 xl:grid-cols-[1.8fr_1fr]">
-            <Card className="border-border/70 bg-background">
-              <CardContent className="space-y-5 p-4">
-                <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-                  <div className="space-y-4 rounded-lg border border-border/70 bg-card p-4">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Report filters</p>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="report-user-filter" className="text-[11px] uppercase tracking-wide text-muted-foreground">User filter</Label>
-                        <Select id="report-user-filter" value={reportUserFilter} onValueChange={(value) => setReportUserFilter(value)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="All users" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All users</SelectItem>
-                            {users.map((userProfile) => (
-                              <SelectItem key={userProfile.id} value={userProfile.id}>
-                                {userProfile.full_name || userProfile.email}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="report-team-filter" className="text-[11px] uppercase tracking-wide text-muted-foreground">Team filter</Label>
-                        <Select id="report-team-filter" value={reportTeamFilter} onValueChange={(value) => setReportTeamFilter(value as typeof reportTeamFilter)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="All teams" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All teams</SelectItem>
-                            <SelectItem value="sales">Sales</SelectItem>
-                            <SelectItem value="admin">Admin</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="report-range" className="text-[11px] uppercase tracking-wide text-muted-foreground">Date range</Label>
-                        <Select id="report-range" value={reportFilterRange} onValueChange={(value) => setReportFilterRange(value as typeof reportFilterRange)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Range" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="7d">Last 7 days</SelectItem>
-                            <SelectItem value="30d">Last 30 days</SelectItem>
-                            <SelectItem value="month">This month</SelectItem>
-                            <SelectItem value="custom">Custom range</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="report-call-type" className="text-[11px] uppercase tracking-wide text-muted-foreground">Call type</Label>
-                        <Select id="report-call-type" value={reportCallType} onValueChange={(value) => setReportCallType(value as typeof reportCallType)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Call type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All calls</SelectItem>
-                            <SelectItem value="incoming">Incoming</SelectItem>
-                            <SelectItem value="outgoing">Outgoing</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    {reportFilterRange === 'custom' && (
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="custom-start">Start date</Label>
-                          <Input
-                            id="custom-start"
-                            type="date"
-                            value={customStartDate}
-                            onChange={(event) => setCustomStartDate(event.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="custom-end">End date</Label>
-                          <Input
-                            id="custom-end"
-                            type="date"
-                            value={customEndDate}
-                            onChange={(event) => setCustomEndDate(event.target.value)}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-4 rounded-lg border border-border/70 bg-card p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Compare mode</p>
-                        <p className="text-sm font-semibold">{reportCompareMode ? 'Enabled' : 'Disabled'}</p>
-                      </div>
-                      <Switch checked={reportCompareMode} onCheckedChange={setReportCompareMode} />
-                    </div>
-                    <p className="text-xs text-muted-foreground">Use side-by-side period comparisons for executive decision reports.</p>
-                    <div className="grid gap-3">
-                      <Button size="sm" onClick={handleRefreshReports} disabled={isFetchingCallLogs} className="w-full">
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        {isFetchingCallLogs ? 'Refreshing...' : 'Refresh'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setReportFilterRange('7d');
-                          setReportCallType('all');
-                          setReportUserFilter('all');
-                          setReportTeamFilter('all');
-                          setReportCompareMode(false);
-                          setCustomStartDate(format(subDays(new Date(), 6), 'yyyy-MM-dd'));
-                          setCustomEndDate(format(new Date(), 'yyyy-MM-dd'));
-                        }}
-                        className="w-full"
-                      >
-                        Reset filters
-                      </Button>
-                    </div>
-                    <div className="rounded-lg border border-border/70 bg-muted/10 p-3">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Last refreshed</p>
-                      <p className="mt-1 text-sm font-semibold">{lastUpdatedAt}</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+      {/* Minimalist Control Strip */}
+      <Card className="border-border/50 bg-gradient-to-r from-slate-50 to-white shadow-sm">
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            {/* Left: Filter Controls */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={reportFilterRange} onValueChange={(value) => setReportFilterRange(value as typeof reportFilterRange)}>
+                <SelectTrigger className="h-8 w-32 border-slate-200 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7d">Last 7 days</SelectItem>
+                  <SelectItem value="30d">Last 30 days</SelectItem>
+                  <SelectItem value="month">This month</SelectItem>
+                  <SelectItem value="custom">Custom range</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={reportCallType} onValueChange={(value) => setReportCallType(value as typeof reportCallType)}>
+                <SelectTrigger className="h-8 w-28 border-slate-200 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All calls</SelectItem>
+                  <SelectItem value="incoming">Incoming</SelectItem>
+                  <SelectItem value="outgoing">Outgoing</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={reportUserFilter} onValueChange={(value) => setReportUserFilter(value)}>
+                <SelectTrigger className="h-8 w-32 border-slate-200 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All users</SelectItem>
+                  {users.map((userProfile) => (
+                    <SelectItem key={userProfile.id} value={userProfile.id}>
+                      {userProfile.full_name || userProfile.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={reportTeamFilter} onValueChange={(value) => setReportTeamFilter(value as typeof reportTeamFilter)}>
+                <SelectTrigger className="h-8 w-28 border-slate-200 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All teams</SelectItem>
+                  <SelectItem value="sales">Sales</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Card className="border-border/70">
-                <CardContent className="space-y-2 p-4">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total calls</p>
-                  <p className="text-2xl font-semibold">{callActivityReport.totals.totalCalls}</p>
-                  <p className="text-sm text-muted-foreground">Calls within filtered range</p>
-                </CardContent>
-              </Card>
-              <Card className="border-border/70">
-                <CardContent className="space-y-2 p-4">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Connect rate</p>
-                  <p className="text-2xl font-semibold">{callActivityReport.totals.answerRate}%</p>
-                  <p className="text-sm text-muted-foreground">Answer ratio across selected calls</p>
-                </CardContent>
-              </Card>
-              <Card className="border-border/70">
-                <CardContent className="space-y-2 p-4">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Talk time</p>
-                  <p className="text-2xl font-semibold">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
-                  <p className="text-sm text-muted-foreground">Aggregate call duration</p>
-                </CardContent>
-              </Card>
-              <Card className="border-border/70">
-                <CardContent className="space-y-2 p-4">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Active users</p>
-                  <p className="text-2xl font-semibold">{callActivityReport.byUser.length}</p>
-                  <p className="text-sm text-muted-foreground">Users with activity in range</p>
-                </CardContent>
-              </Card>
+            {/* Middle: Compare Mode & Actions */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 px-2 py-1">
+                <Switch checked={reportCompareMode} onCheckedChange={setReportCompareMode} className="h-4 w-8" />
+                <span className="text-[11px] font-medium text-slate-600">Compare</span>
+              </div>
+              <Button size="sm" onClick={handleRefreshReports} disabled={isFetchingCallLogs} className="h-8 gap-1 px-2 text-xs">
+                <RefreshCw className="h-3 w-3" />
+                {isFetchingCallLogs ? 'Refreshing' : 'Refresh'}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setReportFilterRange('7d');
+                  setReportCallType('all');
+                  setReportUserFilter('all');
+                  setReportTeamFilter('all');
+                  setReportCompareMode(false);
+                  setCustomStartDate(format(subDays(new Date(), 6), 'yyyy-MM-dd'));
+                  setCustomEndDate(format(new Date(), 'yyyy-MM-dd'));
+                }}
+                className="h-8 px-2 text-xs"
+              >
+                Reset
+              </Button>
+            </div>
+
+            {/* Right: KPI Metrics */}
+            <div className="flex flex-wrap items-center gap-3 border-l border-slate-200 pl-4">
+              <div className="flex flex-col gap-0.5 min-w-fit">
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Calls</p>
+                <p className="text-lg font-bold text-slate-900">{callActivityReport.totals.totalCalls}</p>
+              </div>
+              <div className="flex flex-col gap-0.5 min-w-fit">
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Connect</p>
+                <p className="text-lg font-bold text-blue-600">{callActivityReport.totals.answerRate}%</p>
+              </div>
+              <div className="flex flex-col gap-0.5 min-w-fit">
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Duration</p>
+                <p className="text-lg font-bold text-slate-900">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
+              </div>
+              <div className="flex flex-col gap-0.5 min-w-fit">
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Users</p>
+                <p className="text-lg font-bold text-slate-900">{callActivityReport.byUser.length}</p>
+              </div>
+              <div className="text-[10px] text-slate-400 border-l border-slate-200 pl-3">
+                <p>Updated: {lastUpdatedAt}</p>
+              </div>
             </div>
           </div>
 
+          {reportFilterRange === 'custom' && (
+            <div className="mt-3 flex gap-2 border-t border-slate-200 pt-3">
+              <div className="space-y-1">
+                <Label htmlFor="custom-start" className="text-xs">Start</Label>
+                <Input
+                  id="custom-start"
+                  type="date"
+                  value={customStartDate}
+                  onChange={(event) => setCustomStartDate(event.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="custom-end" className="text-xs">End</Label>
+                <Input
+                  id="custom-end"
+                  type="date"
+                  value={customEndDate}
+                  onChange={(event) => setCustomEndDate(event.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/80 shadow-sm">
+        <CardContent className="space-y-6 pt-4">
           {reportCompareMode && comparisonTotals && comparisonRangeBounds ? (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <Card className="border-border/70">
