@@ -3109,24 +3109,6 @@ const AdminDashboard = () => {
           </aside>
 
           <div className="min-w-0 space-y-4">
-            <section className="rounded-3xl border border-slate-200 bg-white px-4 py-4 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.2)]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h1 className="truncate text-xl font-semibold tracking-tight text-slate-900">{activeSectionTitle}</h1>
-                  <p className="mt-1 text-sm text-slate-500">{activeSectionDescription}</p>
-                  <p className="mt-2 text-xs font-medium uppercase tracking-[0.18em] text-slate-400">{activeSectionCount}</p>
-                </div>
-                <Button
-                  variant="outline"
-                  className="border-slate-200 text-slate-600 hover:text-slate-900"
-                  onClick={() => void handleSignOut()}
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Logout
-                </Button>
-              </div>
-            </section>
-
             <main className="min-w-0 lg:max-h-[calc(100vh-56px)] lg:overflow-y-auto lg:pr-1">
               {activeSection === 'overview' && renderOverview()}
               {activeSection === 'leads' && renderLeads()}
