@@ -3013,9 +3013,9 @@ const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-[#f5f7fb] text-slate-900" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-      <div className="w-full px-4 py-4 lg:px-5">
-        <div className={`grid grid-cols-1 gap-4 ${sidebarCollapsed ? 'lg:grid-cols-[78px_minmax(0,1fr)]' : 'lg:grid-cols-[272px_minmax(0,1fr)]'}`}>
-          <aside className="relative rounded-[28px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.28)] backdrop-blur">
+      <div className="w-full h-screen lg:h-auto">
+        <div className={`grid grid-cols-1 gap-0 h-full ${sidebarCollapsed ? 'lg:grid-cols-[78px_minmax(0,1fr)]' : 'lg:grid-cols-[272px_minmax(0,1fr)]'}`}>
+          <aside className="relative rounded-none border-r border-slate-200/80 bg-white/95 p-4 shadow-none backdrop-blur overflow-y-auto">
             <button
               onClick={() => setSidebarCollapsed((value) => !value)}
               className="absolute -right-3 top-1/2 hidden h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-[#2d54b5] text-white shadow-lg transition hover:bg-[#23459a] lg:flex"
@@ -3078,8 +3078,8 @@ const AdminDashboard = () => {
             </div>
           </aside>
 
-          <div className="min-w-0 space-y-4">
-            <main className="min-w-0 lg:max-h-[calc(100vh-56px)] lg:overflow-y-auto lg:pr-1">
+          <div className="min-w-0 space-y-4 overflow-hidden p-4 lg:p-5">
+            <main className="min-w-0 h-[calc(100vh-env(safe-area-inset-top))] lg:h-[calc(100vh-env(safe-area-inset-top)-32px)] overflow-y-auto pr-0">
               {activeSection === 'overview' && renderOverview()}
               {activeSection === 'leads' && renderLeads()}
               {activeSection === 'call-activity' && renderCallActivity()}
