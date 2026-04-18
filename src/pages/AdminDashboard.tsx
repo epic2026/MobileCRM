@@ -557,6 +557,10 @@ const AdminDashboard = () => {
       durationSeconds: number;
     }>();
 
+    const uniqueNumbers = new Set<string>();
+    let totalOutboundSeconds = 0;
+    let totalInboundSeconds = 0;
+
     filtered.forEach((entry) => {
       const userLabel = entry.user_id
         ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'Assigned user'
@@ -587,7 +591,7 @@ const AdminDashboard = () => {
           || userMap.get(leadMap.get(entry.lead_id)?.user_id || '')?.email
           || 'Assigned user'
         : userLabel;
-      const leadKey = entry.lead_id || entry.phone;
+      const leadKey = entry.lead_id || entry.phone || entry.contact_name || `unknown-${entry.id}`;
       const leadBucket = byLead.get(leadKey) || {
         lead: leadLabel,
         phone: entry.phone,
@@ -622,23 +626,58 @@ const AdminDashboard = () => {
       if (entry.type === 'outgoing') dayBucket.outgoingCalls += 1;
       if (entry.type === 'incoming') dayBucket.incomingCalls += 1;
       byCalendar.set(dayKey, dayBucket);
+
+      if (entry.phone) {
+        uniqueNumbers.add(entry.phone);
+      } else if (entry.contact_name) {
+        uniqueNumbers.add(entry.contact_name);
+      }
+
+      if (entry.type === 'outgoing') {
+        totalOutboundSeconds += entry.duration || 0;
+      }
+      if (entry.type === 'incoming') {
+        totalInboundSeconds += entry.duration || 0;
+      }
     });
 
+    const totalCalls = filtered.length;
     const totalDurationSeconds = filtered.reduce((sum, entry) => sum + (entry.duration || 0), 0);
     const totalConnectedCalls = filtered.filter((entry) => (entry.duration || 0) > 0).length;
+    const totalOutboundCalls = filtered.filter((entry) => entry.type === 'outgoing').length;
+    const totalInboundCalls = filtered.filter((entry) => entry.type === 'incoming').length;
+
+    const byUserValues = Array.from(byUser.values());
 
     return {
       invalidRange: false,
       filtered,
       totals: {
-        totalCalls: filtered.length,
+        totalCalls,
         totalConnectedCalls,
         totalMissedCalls: filtered.filter((entry) => entry.type === 'missed').length,
         totalDurationSeconds,
+        totalOutboundCalls,
+        totalInboundCalls,
+        answerRate: totalCalls ? Math.round((totalConnectedCalls / totalCalls) * 100) : 0,
+        uniqueNumbersCalled: uniqueNumbers.size,
+        avgOutboundDurationSeconds: totalOutboundCalls ? Math.round(totalOutboundSeconds / totalOutboundCalls) : 0,
+        avgInboundDurationSeconds: totalInboundCalls ? Math.round(totalInboundSeconds / totalInboundCalls) : 0,
       },
-      byUser: Array.from(byUser.values()).sort((a, b) => b.totalCalls - a.totalCalls),
+      byUser: byUserValues.sort((a, b) => b.totalCalls - a.totalCalls),
+      topOutboundUsers: [...byUserValues]
+        .sort((a, b) => b.outgoingCalls - a.outgoingCalls)
+        .filter((entry) => entry.outgoingCalls > 0)
+        .slice(0, 5),
+      topInboundUsers: [...byUserValues]
+        .sort((a, b) => b.incomingCalls - a.incomingCalls)
+        .filter((entry) => entry.incomingCalls > 0)
+        .slice(0, 5),
+      topDurationUsers: [...byUserValues]
+        .sort((a, b) => b.durationSeconds - a.durationSeconds)
+        .slice(0, 5),
       byLead: Array.from(byLead.values()).sort((a, b) => b.totalCalls - a.totalCalls),
-      byCalendar: Array.from(byCalendar.values()).sort((a, b) => b.date.localeCompare(a.date)),
+      byCalendar: Array.from(byCalendar.values()).sort((a, b) => a.date.localeCompare(b.date)),
     };
   }, [filteredCallLogs, leadMap, userMap]);
 
@@ -1438,20 +1477,44 @@ const AdminDashboard = () => {
             </Card>
             <Card className="border-border/70">
               <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Connected Calls</p>
-                <p className="text-2xl font-semibold">{callActivityReport.totals.totalConnectedCalls}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total Duration</p>
+                <p className="text-2xl font-semibold">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
               </CardContent>
             </Card>
             <Card className="border-border/70">
               <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Missed Calls</p>
-                <p className="text-2xl font-semibold">{callActivityReport.totals.totalMissedCalls}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Outbound Calls</p>
+                <p className="text-2xl font-semibold">{callActivityReport.totals.totalOutboundCalls}</p>
               </CardContent>
             </Card>
             <Card className="border-border/70">
               <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Talk Time</p>
-                <p className="text-xl font-semibold">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Inbound Calls</p>
+                <p className="text-2xl font-semibold">{callActivityReport.totals.totalInboundCalls}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Answer Rate</p>
+                <p className="text-2xl font-semibold">{callActivityReport.totals.answerRate}%</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Unique Numbers Called</p>
+                <p className="text-2xl font-semibold">{callActivityReport.totals.uniqueNumbersCalled}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Avg Outbound Duration</p>
+                <p className="text-xl font-semibold">{formatCallDuration(callActivityReport.totals.avgOutboundDurationSeconds)}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/70">
+              <CardContent className="pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Avg Inbound Duration</p>
+                <p className="text-xl font-semibold">{formatCallDuration(callActivityReport.totals.avgInboundDurationSeconds)}</p>
               </CardContent>
             </Card>
           </div>
@@ -1471,12 +1534,12 @@ const AdminDashboard = () => {
                     <CardDescription>Daily momentum of activity and outcomes.</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-2">
-                      {callActivityReport.byCalendar.slice(0, 10).map((entry) => {
+                    <div className="space-y-3">
+                      {callActivityReport.byCalendar.slice(-10).map((entry) => {
                         const total = Math.max(entry.totalCalls, 1);
                         const connectedWidth = `${Math.round((entry.connectedCalls / total) * 100)}%`;
                         return (
-                          <div key={`trend-${entry.date}`}>
+                          <div key={`trend-${entry.date}`}> 
                             <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
                               <span>{format(new Date(entry.date), 'dd MMM')}</span>
                               <span>{entry.connectedCalls}/{entry.totalCalls}</span>
@@ -1492,16 +1555,80 @@ const AdminDashboard = () => {
                 </Card>
                 <Card className="border-border/70">
                   <CardHeader>
-                    <CardTitle className="text-base">Leaderboard</CardTitle>
-                    <CardDescription>Top call performers by volume.</CardDescription>
+                    <CardTitle className="text-base">Duration Trend</CardTitle>
+                    <CardDescription>Talk time volume by day.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {callActivityReport.byCalendar.slice(-10).map((entry) => {
+                        const maxDuration = Math.max(...callActivityReport.byCalendar.map((item) => item.durationSeconds), 1);
+                        const durationWidth = `${Math.round((entry.durationSeconds / maxDuration) * 100)}%`;
+                        return (
+                          <div key={`duration-${entry.date}`}>
+                            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{format(new Date(entry.date), 'dd MMM')}</span>
+                              <span>{formatCallDuration(entry.durationSeconds)}</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-muted">
+                              <div className="h-2 rounded-full bg-emerald-500" style={{ width: durationWidth }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-3">
+                <Card className="border-border/70">
+                  <CardHeader>
+                    <CardTitle className="text-base">Outbound Leaders</CardTitle>
+                    <CardDescription>Top outbound callers by volume.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    {callActivityReport.byUser.slice(0, 5).map((entry, index) => (
-                      <div key={`lb-${entry.user}`} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                    {callActivityReport.topOutboundUsers.map((entry, index) => (
+                      <div key={`outbound-${entry.user}`} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
                         <span className="font-medium">#{index + 1} {entry.user}</span>
-                        <Badge variant="secondary">{entry.totalCalls}</Badge>
+                        <Badge variant="secondary">{entry.outgoingCalls}</Badge>
                       </div>
                     ))}
+                    {callActivityReport.topOutboundUsers.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No outbound activity yet.</p>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card className="border-border/70">
+                  <CardHeader>
+                    <CardTitle className="text-base">Inbound Leaders</CardTitle>
+                    <CardDescription>Top inbound callers by volume.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {callActivityReport.topInboundUsers.map((entry, index) => (
+                      <div key={`inbound-${entry.user}`} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                        <span className="font-medium">#{index + 1} {entry.user}</span>
+                        <Badge variant="secondary">{entry.incomingCalls}</Badge>
+                      </div>
+                    ))}
+                    {callActivityReport.topInboundUsers.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No inbound activity yet.</p>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card className="border-border/70">
+                  <CardHeader>
+                    <CardTitle className="text-base">Talk Time Leaders</CardTitle>
+                    <CardDescription>Users with the highest total call duration.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {callActivityReport.topDurationUsers.map((entry, index) => (
+                      <div key={`duration-${entry.user}`} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                        <span className="font-medium">#{index + 1} {entry.user}</span>
+                        <span className="text-slate-700">{formatCallDuration(entry.durationSeconds)}</span>
+                      </div>
+                    ))}
+                    {callActivityReport.topDurationUsers.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No duration data yet.</p>
+                    )}
                   </CardContent>
                 </Card>
               </div>
