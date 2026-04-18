@@ -70,6 +70,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Shield,
   Users,
@@ -102,7 +103,29 @@ import {
   Mail,
   Copy,
   Check,
+  ArrowUpRight,
+  ArrowDownRight,
+  TrendingUp,
+  Star,
+  User,
 } from 'lucide-react';
+import { ChartContainer, ChartTooltip, ChartLegend } from '@/components/ui/chart';
+import {
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  Brush,
+  ReferenceLine,
+  Legend,
+} from 'recharts';
 import { format, subDays } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
@@ -202,6 +225,19 @@ const AdminDashboard = () => {
   const [usersPage, setUsersPage] = useState(1);
   const usersPageSize = 10;
 
+  const [reportFilterRange, setReportFilterRange] = useState<'7d' | '30d' | 'month' | 'custom'>('7d');
+  const [reportGranularity, setReportGranularity] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [reportCallType, setReportCallType] = useState<'all' | 'incoming' | 'outgoing'>('all');
+  const [reportUserFilter, setReportUserFilter] = useState<'all' | string>('all');
+  const [reportTeamFilter, setReportTeamFilter] = useState<'all' | 'sales' | 'admin'>('all');
+  const [reportCompareMode, setReportCompareMode] = useState(false);
+  const [drilldownMetric, setDrilldownMetric] = useState<string | null>(null);
+  const [isDrilldownOpen, setIsDrilldownOpen] = useState(false);
+  const [customStartDate, setCustomStartDate] = useState(format(subDays(new Date(), 6), 'yyyy-MM-dd'));
+  const [customEndDate, setCustomEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [savedViewName, setSavedViewName] = useState('');
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(format(new Date(), 'PPP p'));
+
   // Tenant management state
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member');
@@ -211,6 +247,7 @@ const AdminDashboard = () => {
   const [newTenantName, setNewTenantName] = useState('');
   const [newTenantSlug, setNewTenantSlug] = useState('');
   const [newTenantManagerId, setNewTenantManagerId] = useState('');
+  const [newTenantManagerEmail, setNewTenantManagerEmail] = useState('');
 
   const isSuperAdmin = role === 'super_admin';
   const canAccessAdminDashboard = role === 'admin' || role === 'super_admin';
@@ -345,7 +382,7 @@ const AdminDashboard = () => {
     enabled: canAccessAdminDashboard && !!currentTenant,
   });
 
-  const { data: callLogs = [] } = useQuery({
+  const { data: callLogs = [], refetch: refetchCallLogs, isFetching: isFetchingCallLogs } = useQuery({
     queryKey: ['admin-call-logs', currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant) return [];
@@ -385,7 +422,131 @@ const AdminDashboard = () => {
     [users],
   );
 
-  const filteredCallLogs = useMemo(() => callLogs, [callLogs]);
+  const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+  const reportRangeBounds = useMemo(() => {
+    const now = new Date();
+    let start = subDays(now, 6);
+    let end = now;
+
+    if (reportFilterRange === '30d') {
+      start = subDays(now, 29);
+    }
+
+    if (reportFilterRange === 'month') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    if (reportFilterRange === 'custom') {
+      const parsedStart = new Date(customStartDate);
+      const parsedEnd = new Date(customEndDate);
+      if (!Number.isNaN(parsedStart.getTime()) && !Number.isNaN(parsedEnd.getTime())) {
+        start = parsedStart;
+        end = parsedEnd;
+      }
+    }
+
+    const rangeStart = new Date(start);
+    rangeStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(end);
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    return { rangeStart, rangeEnd };
+  }, [reportFilterRange, customStartDate, customEndDate]);
+
+  const comparisonRangeBounds = useMemo(() => {
+    if (!reportCompareMode) return null;
+
+    const days = Math.round((reportRangeBounds.rangeEnd.getTime() - reportRangeBounds.rangeStart.getTime()) / MS_PER_DAY) + 1;
+    const previousEnd = subDays(reportRangeBounds.rangeStart, 1);
+    const previousStart = subDays(previousEnd, days - 1);
+
+    const rangeStart = new Date(previousStart);
+    rangeStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(previousEnd);
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    return { rangeStart, rangeEnd };
+  }, [reportCompareMode, reportRangeBounds]);
+
+  const filteredCallLogs = useMemo(() => {
+    const isEntryMatch = (entry: CallLog, rangeStart: Date, rangeEnd: Date) => {
+      const createdAt = new Date(entry.created_at);
+      if (Number.isNaN(createdAt.getTime())) return false;
+      if (createdAt < rangeStart || createdAt > rangeEnd) return false;
+      if (reportCallType !== 'all' && entry.type !== reportCallType) return false;
+      if (reportUserFilter !== 'all' && entry.user_id !== reportUserFilter) return false;
+      if (reportTeamFilter !== 'all') {
+        const role = entry.user_id ? userMap.get(entry.user_id)?.role : null;
+        if (role !== reportTeamFilter) return false;
+      }
+      return true;
+    };
+
+    return callLogs
+      .filter((entry) => isEntryMatch(entry, reportRangeBounds.rangeStart, reportRangeBounds.rangeEnd))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [callLogs, reportRangeBounds, reportCallType, reportUserFilter, reportTeamFilter, userMap]);
+
+  const comparisonCallLogs = useMemo(() => {
+    if (!comparisonRangeBounds) return [];
+
+    const isEntryMatch = (entry: CallLog, rangeStart: Date, rangeEnd: Date) => {
+      const createdAt = new Date(entry.created_at);
+      if (Number.isNaN(createdAt.getTime())) return false;
+      if (createdAt < rangeStart || createdAt > rangeEnd) return false;
+      if (reportCallType !== 'all' && entry.type !== reportCallType) return false;
+      if (reportUserFilter !== 'all' && entry.user_id !== reportUserFilter) return false;
+      if (reportTeamFilter !== 'all') {
+        const role = entry.user_id ? userMap.get(entry.user_id)?.role : null;
+        if (role !== reportTeamFilter) return false;
+      }
+      return true;
+    };
+
+    return callLogs
+      .filter((entry) => isEntryMatch(entry, comparisonRangeBounds.rangeStart, comparisonRangeBounds.rangeEnd))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [callLogs, comparisonRangeBounds, reportCallType, reportUserFilter, reportTeamFilter, userMap]);
+
+  const computeReportTotals = (logs: CallLog[]) => {
+    const totalCalls = logs.length;
+    const totalConnectedCalls = logs.filter((entry) => (entry.duration || 0) > 0).length;
+    const totalDurationSeconds = logs.reduce((sum, entry) => sum + (entry.duration || 0), 0);
+    const totalOutboundCalls = logs.filter((entry) => entry.type === 'outgoing').length;
+    const totalInboundCalls = logs.filter((entry) => entry.type === 'incoming').length;
+    const uniqueNumbersCalled = new Set(logs.map((entry) => entry.phone || entry.contact_name || '')).size;
+
+    return {
+      totalCalls,
+      totalConnectedCalls,
+      totalDurationSeconds,
+      totalOutboundCalls,
+      totalInboundCalls,
+      answerRate: totalCalls ? Math.round((totalConnectedCalls / totalCalls) * 100) : 0,
+      uniqueNumbersCalled,
+      avgOutboundDurationSeconds: totalOutboundCalls ? Math.round(logs.filter((entry) => entry.type === 'outgoing').reduce((sum, entry) => sum + (entry.duration || 0), 0) / totalOutboundCalls) : 0,
+      avgInboundDurationSeconds: totalInboundCalls ? Math.round(logs.filter((entry) => entry.type === 'incoming').reduce((sum, entry) => sum + (entry.duration || 0), 0) / totalInboundCalls) : 0,
+    };
+  };
+
+  const comparisonTotals = useMemo(() => {
+    if (!reportCompareMode || !comparisonCallLogs.length) return null;
+    return computeReportTotals(comparisonCallLogs);
+  }, [comparisonCallLogs, reportCompareMode]);
+
+  const handleRefreshReports = async () => {
+    try {
+      await refetchCallLogs();
+      setLastUpdatedAt(format(new Date(), 'PPP p'));
+    } catch (error) {
+      toast({
+        title: 'Refresh failed',
+        description: error instanceof Error ? error.message : 'Unable to refresh call activity.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const activityTypeOptions = useMemo(
     () => Array.from(new Set(activities.map((entry) => entry.type).filter(Boolean))).sort(),
@@ -1468,56 +1629,178 @@ const AdminDashboard = () => {
           <CardDescription>Actionable call reporting by user, by lead, and by calendar day.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
+          <div className="grid gap-2 lg:grid-cols-[270px_1fr_220px] items-end">
+            <div className="space-y-2 rounded-lg border border-border/70 bg-background p-4">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Report range</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Select value={reportFilterRange} onValueChange={(value) => setReportFilterRange(value as typeof reportFilterRange)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7d">Last 7 days</SelectItem>
+                    <SelectItem value="30d">Last 30 days</SelectItem>
+                    <SelectItem value="month">This month</SelectItem>
+                    <SelectItem value="custom">Custom range</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={reportCallType} onValueChange={(value) => setReportCallType(value as typeof reportCallType)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Call type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All calls</SelectItem>
+                    <SelectItem value="incoming">Incoming</SelectItem>
+                    <SelectItem value="outgoing">Outgoing</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {reportFilterRange === 'custom' && (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="custom-start">Start date</Label>
+                    <Input
+                      id="custom-start"
+                      type="date"
+                      value={customStartDate}
+                      onChange={(event) => setCustomStartDate(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="custom-end">End date</Label>
+                    <Input
+                      id="custom-end"
+                      type="date"
+                      value={customEndDate}
+                      onChange={(event) => setCustomEndDate(event.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr]">
+              <div className="space-y-2 rounded-lg border border-border/70 bg-background p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">User filter</p>
+                <Select value={reportUserFilter} onValueChange={(value) => setReportUserFilter(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All users" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All users</SelectItem>
+                    {users.map((userProfile) => (
+                      <SelectItem key={userProfile.id} value={userProfile.id}>
+                        {userProfile.full_name || userProfile.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 rounded-lg border border-border/70 bg-background p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Team filter</p>
+                <Select value={reportTeamFilter} onValueChange={(value) => setReportTeamFilter(value as typeof reportTeamFilter)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All teams" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All teams</SelectItem>
+                    <SelectItem value="sales">Sales</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 rounded-lg border border-border/70 bg-background p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Compare mode</p>
+                <div className="flex items-center gap-2">
+                  <Switch checked={reportCompareMode} onCheckedChange={setReportCompareMode} />
+                  <span className="text-sm">{reportCompareMode ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Toggle for side-by-side comparisons.</p>
+              </div>
+            </div>
+            <div className="space-y-3 self-start rounded-lg border border-border/70 bg-background p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Last refreshed</p>
+                <Badge>{lastUpdatedAt}</Badge>
+              </div>
+              <Button size="sm" onClick={handleRefreshReports} disabled={isFetchingCallLogs} className="w-full">
+                <RefreshCw className="mr-2 h-4 w-4" />
+                {isFetchingCallLogs ? 'Refreshing...' : 'Refresh'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setReportFilterRange('7d');
+                  setReportCallType('all');
+                  setReportUserFilter('all');
+                  setReportTeamFilter('all');
+                  setReportCompareMode(false);
+                  setCustomStartDate(format(subDays(new Date(), 6), 'yyyy-MM-dd'));
+                  setCustomEndDate(format(new Date(), 'yyyy-MM-dd'));
+                }}
+              >
+                Reset filters
+              </Button>
+            </div>
+          </div>
+          {reportCompareMode && comparisonTotals && comparisonRangeBounds ? (
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <Card className="border-border/70">
+                <CardContent className="pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Calls vs prior period</p>
+                  <p className="text-2xl font-semibold">{callActivityReport.totals.totalCalls}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Badge variant={callActivityReport.totals.totalCalls >= comparisonTotals.totalCalls ? 'secondary' : 'destructive'}>
+                      {callActivityReport.totals.totalCalls - comparisonTotals.totalCalls >= 0 ? '+' : ''}
+                      {callActivityReport.totals.totalCalls - comparisonTotals.totalCalls}
+                    </Badge>
+                    <p className="text-xs text-muted-foreground">vs {format(comparisonRangeBounds.rangeStart, 'MMM d')}–{format(comparisonRangeBounds.rangeEnd, 'MMM d')}</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-border/70">
+                <CardContent className="pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Answer rate change</p>
+                  <p className="text-2xl font-semibold">{callActivityReport.totals.answerRate}%</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Badge variant={callActivityReport.totals.answerRate >= comparisonTotals.answerRate ? 'secondary' : 'destructive'}>
+                      {callActivityReport.totals.answerRate - comparisonTotals.answerRate >= 0 ? '+' : ''}
+                      {callActivityReport.totals.answerRate - comparisonTotals.answerRate}%
+                    </Badge>
+                    <p className="text-xs text-muted-foreground">previous {comparisonTotals.totalCalls} calls</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-border/70">
+                <CardContent className="pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Talk time change</p>
+                  <p className="text-2xl font-semibold">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Badge variant={callActivityReport.totals.totalDurationSeconds >= comparisonTotals.totalDurationSeconds ? 'secondary' : 'destructive'}>
+                      {callActivityReport.totals.totalDurationSeconds - comparisonTotals.totalDurationSeconds >= 0 ? '+' : ''}
+                      {formatCallDuration(Math.abs(callActivityReport.totals.totalDurationSeconds - comparisonTotals.totalDurationSeconds))}
+                    </Badge>
+                    <p className="text-xs text-muted-foreground">previous period</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-border/70">
+                <CardContent className="pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Unique numbers change</p>
+                  <p className="text-2xl font-semibold">{callActivityReport.totals.uniqueNumbersCalled}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Badge variant={callActivityReport.totals.uniqueNumbersCalled >= comparisonTotals.uniqueNumbersCalled ? 'secondary' : 'destructive'}>
+                      {callActivityReport.totals.uniqueNumbersCalled - comparisonTotals.uniqueNumbersCalled >= 0 ? '+' : ''}
+                      {callActivityReport.totals.uniqueNumbersCalled - comparisonTotals.uniqueNumbersCalled}
+                    </Badge>
+                    <p className="text-xs text-muted-foreground">previous set: {comparisonTotals.uniqueNumbersCalled}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total Calls</p>
-                <p className="text-2xl font-semibold">{callActivityReport.totals.totalCalls}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total Duration</p>
-                <p className="text-2xl font-semibold">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Outbound Calls</p>
-                <p className="text-2xl font-semibold">{callActivityReport.totals.totalOutboundCalls}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Inbound Calls</p>
-                <p className="text-2xl font-semibold">{callActivityReport.totals.totalInboundCalls}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Answer Rate</p>
-                <p className="text-2xl font-semibold">{callActivityReport.totals.answerRate}%</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Unique Numbers Called</p>
-                <p className="text-2xl font-semibold">{callActivityReport.totals.uniqueNumbersCalled}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Avg Outbound Duration</p>
-                <p className="text-xl font-semibold">{formatCallDuration(callActivityReport.totals.avgOutboundDurationSeconds)}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Avg Inbound Duration</p>
-                <p className="text-xl font-semibold">{formatCallDuration(callActivityReport.totals.avgInboundDurationSeconds)}</p>
-              </CardContent>
-            </Card>
-          </div>
 
           <Tabs value={callReportView} onValueChange={(value) => setCallReportView(value as typeof callReportView)}>
             <TabsList>
@@ -2004,9 +2287,20 @@ const AdminDashboard = () => {
             <CardDescription>Create a tenant and assign one tenant manager (admin).</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 pt-6">
-            <div className="flex flex-wrap gap-2">
+            <div className="grid gap-3 sm:grid-cols-[1fr_200px]">
+              <div className="space-y-2">
+                <Label htmlFor="quick-tenant-manager-email">Manager Email</Label>
+                <Input
+                  id="quick-tenant-manager-email"
+                  type="email"
+                  value={newTenantManagerEmail}
+                  onChange={(e) => setNewTenantManagerEmail(e.target.value)}
+                  placeholder="admin@tenant.com"
+                />
+              </div>
               <Button
                 variant="outline"
+                className="h-fit"
                 onClick={async () => {
                   try {
                     if (!newTenantManagerEmail.trim()) {

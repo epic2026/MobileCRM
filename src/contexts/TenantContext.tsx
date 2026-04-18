@@ -95,38 +95,41 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
         return allTenants || [];
       }
 
-      // Get tenants where user is owner or member
-      const { data: ownedTenants, error: ownError } = await supabase
-        .from('tenants')
-        .select('*')
-        .eq('owner_id', userId);
+      // Get tenants where user is owner or member.
+      const [ownedResult, memberLinksResult] = await Promise.all([
+        supabase.from('tenants').select('*').eq('owner_id', userId),
+        supabase.from('tenant_members').select('tenant_id').eq('user_id', userId),
+      ]);
 
-      const { data: memberTenants, error: memberError } = await supabase
-        .from('tenants')
-        .select('*')
-        .in(
-          'id',
-          (
-            await supabase
-              .from('tenant_members')
-              .select('tenant_id')
-              .eq('user_id', userId)
-          ).data?.map((m: any) => m.tenant_id) || []
-        );
+      const ownedTenants = ownedResult.data || [];
+      const ownedError = ownedResult.error;
+      const memberLinks = memberLinksResult.data || [];
+      const memberLinksError = memberLinksResult.error;
 
-      if (ownError) {
-        console.error('Error fetching owned tenants:', ownError);
+      if (ownedError) {
+        console.error('Error fetching owned tenants:', ownedError);
         return [];
       }
+
+      if (memberLinksError) {
+        console.error('Error fetching tenant membership links:', memberLinksError);
+      }
+
+      const memberTenantIds = (memberLinks as Array<{ tenant_id: string }> || []).map((m) => m.tenant_id);
+      const uniqueMemberTenantIds = Array.from(new Set(memberTenantIds));
+
+      const { data: memberTenants, error: memberError } = uniqueMemberTenantIds.length > 0
+        ? await supabase.from('tenants').select('*').in('id', uniqueMemberTenantIds)
+        : { data: [], error: null };
 
       if (memberError) {
         console.error('Error fetching member tenants:', memberError);
       }
 
       const allTenants = [
-        ...(ownedTenants || []),
+        ...ownedTenants,
         ...(memberTenants || []).filter(
-          (t: Tenant) => !ownedTenants?.some((o: Tenant) => o.id === t.id)
+          (t: Tenant) => !ownedTenants.some((o: Tenant) => o.id === t.id)
         ),
       ];
 
@@ -196,26 +199,101 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
         .select('role')
         .eq('tenant_id', tenantId)
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error) {
-        // User is not a member, check if they're the owner
-        const { data: tenantData } = await supabase
-          .from('tenants')
-          .select('owner_id')
-          .eq('id', tenantId)
-          .single();
-
-        if (tenantData?.owner_id === userId) {
-          return 'owner' as TenantRole;
-        }
+        console.error('Error fetching tenant member role:', error);
         return null;
       }
 
-      return data?.role as TenantRole || null;
+      if (data?.role) {
+        return data.role as TenantRole;
+      }
+
+      // User is not a member, check if they're the owner
+      const { data: tenantData, error: tenantError } = await supabase
+        .from('tenants')
+        .select('owner_id')
+        .eq('id', tenantId)
+        .maybeSingle();
+
+      if (tenantError) {
+        console.error('Error fetching tenant owner:', tenantError);
+        return null;
+      }
+
+      if (tenantData?.owner_id === userId) {
+        return 'owner' as TenantRole;
+      }
+      return null;
     } catch (error) {
       console.error('Error fetching tenant role:', error);
       return null;
+    }
+  }, []);
+
+  const ensureAdminTenantUserBinding = useCallback(async () => {
+    try {
+      const adminEmail = 'ap79020@gmail.com';
+      const { data: adminTenant, error: tenantError } = await supabase
+        .from('tenants')
+        .select('id')
+        .eq('slug', 'admin-tenant')
+        .maybeSingle();
+
+      if (tenantError || !adminTenant) {
+        if (tenantError) console.error('Error fetching admin-tenant:', tenantError);
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, tenant_id')
+        .eq('email', adminEmail)
+        .maybeSingle();
+
+      if (profileError || !profile) {
+        if (profileError) console.error('Error fetching admin user profile:', profileError);
+        return;
+      }
+
+      if (profile.tenant_id !== adminTenant.id) {
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ tenant_id: adminTenant.id })
+          .eq('id', profile.id);
+
+        if (updateError) {
+          console.error('Error updating admin user tenant assignment:', updateError);
+        }
+      }
+
+      const { data: existingMember, error: memberError } = await supabase
+        .from('tenant_members')
+        .select('id')
+        .eq('tenant_id', adminTenant.id)
+        .eq('user_id', profile.id)
+        .maybeSingle();
+
+      if (memberError) {
+        console.error('Error checking admin tenant membership:', memberError);
+        return;
+      }
+
+      if (!existingMember) {
+        const { error: insertError } = await supabase.from('tenant_members').insert({
+          tenant_id: adminTenant.id,
+          user_id: profile.id,
+          role: 'admin',
+          joined_at: new Date().toISOString(),
+        });
+
+        if (insertError) {
+          console.error('Error inserting admin tenant membership:', insertError);
+        }
+      }
+    } catch (error) {
+      console.error('Error ensuring admin tenant user binding:', error);
     }
   }, []);
 
@@ -237,16 +315,19 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
 
         // Restore tenant selection when available
         const storedTenantId = sessionStorage.getItem('currentTenantId');
+        let candidateTenantId: string | null = null;
 
-        // Set selected tenant or fallback to first available tenant
-        if (userTenants.length > 0) {
-          const candidateTenantId =
-            storedTenantId && userTenants.some((tenant) => tenant.id === storedTenantId)
-              ? storedTenantId
-              : userTenants[0].id;
+        if (storedTenantId && userTenants.some((tenant) => tenant.id === storedTenantId)) {
+          candidateTenantId = storedTenantId;
+        } else if (userTenants.length > 0) {
+          candidateTenantId = userTenants[0].id;
+        }
 
+        if (candidateTenantId) {
           await switchTenant(candidateTenantId);
         }
+
+        void ensureAdminTenantUserBinding();
       } catch (error) {
         console.error('Error initializing tenants:', error);
       } finally {
@@ -271,11 +352,13 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
 
         setCurrentTenant(tenant);
 
-        // Fetch role and members
-        const role = await fetchTenantRole(tenantId, user.id);
-        setTenantRole(role);
+        // Fetch role and members in parallel to reduce load time.
+        const [role, members] = await Promise.all([
+          fetchTenantRole(tenantId, user.id),
+          fetchTenantMembers(tenantId),
+        ]);
 
-        const members = await fetchTenantMembers(tenantId);
+        setTenantRole(role);
         setTenantMembers(members);
 
         // Update component state so queries use this tenant_id
