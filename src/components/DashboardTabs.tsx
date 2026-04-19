@@ -37,10 +37,10 @@ function lastNDays(n: number) {
   return days;
 }
 
-function useOverviewData() {
+function useOverviewData(rangeDays = 7) {
   const { callLogs = [] } = useCallLogs();
 
-  const last7 = lastNDays(7);
+  const last7 = lastNDays(rangeDays);
 
   const callsByDay = last7.map((d) => {
     const dateKey = d.toISOString().slice(0, 10);
@@ -118,8 +118,8 @@ function useUserNames(callLogs: any[]) {
 
 const COLORS = ['#2563EB', '#10B981', '#F59E0B', '#EF4444', '#7C3AED', '#06B6D4'];
 
-function OverviewTab() {
-  const { callLogs, callsByDay, users, outcomeMap, hourBuckets, missed, answered } = useOverviewData();
+function OverviewTab({ rangeDays }: { rangeDays: number }) {
+  const { callLogs, callsByDay, users, outcomeMap, hourBuckets, missed, answered } = useOverviewData(rangeDays);
   const names = useUserNames(callLogs);
 
   const topOutbound = users.filter((u) => u.outgoing > 0).sort((a, b) => b.outgoing - a.outgoing).slice(0, 5).map(u=>({ ...u, name: names[u.id] || u.id }));
@@ -272,7 +272,7 @@ function OverviewTab() {
   );
 }
 
-function UserPerformanceTab() {
+function UserPerformanceTab({ rangeDays }: { rangeDays: number }) {
   const { callLogs = [] } = useCallLogs();
   const names = useUserNames(callLogs);
 
@@ -370,6 +370,7 @@ function CallLogsTab() {
 
 export default function DashboardTabs() {
   const [activeTab, setActiveTab] = useState(0);
+  const [rangeDays, setRangeDays] = useState<number>(7);
 
   return (
     <div className="p-6">
@@ -386,9 +387,15 @@ export default function DashboardTabs() {
           </button>
         ))}
       </div>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex space-x-2">
+          <button onClick={() => setRangeDays(7)} className={`px-3 py-1 rounded ${rangeDays===7? 'bg-white shadow' : 'bg-gray-100'}`}>Last 7d</button>
+          <button onClick={() => setRangeDays(30)} className={`px-3 py-1 rounded ${rangeDays===30? 'bg-white shadow' : 'bg-gray-100'}`}>Last 30d</button>
+        </div>
+      </div>
       <div>
-        {activeTab === 0 && <OverviewTab />}
-        {activeTab === 1 && <UserPerformanceTab />}
+        {activeTab === 0 && <OverviewTab rangeDays={rangeDays} />}
+        {activeTab === 1 && <UserPerformanceTab rangeDays={rangeDays} />}
         {activeTab === 2 && <CallLogsTab />}
       </div>
     </div>
