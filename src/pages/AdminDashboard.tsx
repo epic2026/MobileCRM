@@ -180,7 +180,7 @@ const AdminDashboard = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [activeSection, setActiveSection] = useState<AdminSection>('overview');
+  const [activeSection, setActiveSection] = useState<AdminSection>('leads');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
@@ -1306,7 +1306,6 @@ const AdminDashboard = () => {
   };
 
   const navigationItems: Array<{ id: AdminSection; label: string; caption: string; icon: typeof LayoutDashboard }> = [
-    { id: 'overview', label: 'Overview', caption: 'Workspace pulse', icon: LayoutDashboard },
     { id: 'leads', label: 'Manage Leads', caption: 'Lead pipeline', icon: Users },
     { id: 'call-activity', label: 'Reports', caption: 'Call insights', icon: Activity },
     { id: 'activity', label: 'Activity', caption: 'Audit trail', icon: Activity },
@@ -1419,164 +1418,6 @@ const AdminDashboard = () => {
         };
     }
   };
-
-  const renderOverview = () => (
-    <div className="space-y-4">
-      <Card className="border-border/80 shadow-sm">
-        <CardHeader className="border-b bg-card">
-          <CardTitle className="flex items-center gap-2">
-            <LayoutDashboard className="h-5 w-5" />
-            Executive Overview
-          </CardTitle>
-          <CardDescription>High-level operational status for leads, calls, and team execution.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-4">
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Leads Created</p>
-                <p className="text-2xl font-semibold">{filteredLeads.length}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Calls</p>
-                <p className="text-2xl font-semibold">{filteredCallLogs.length}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Connect Rate</p>
-                <p className="text-2xl font-semibold">{dashboardInsights.connectRate}%</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Overdue Tasks</p>
-                <p className="text-2xl font-semibold">{dashboardInsights.overdueTasks}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Activities Logged</p>
-                <p className="text-2xl font-semibold">{filteredActivities.length}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70">
-              <CardContent className="pt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Top Performer</p>
-                <p className="truncate text-sm font-semibold">{dashboardInsights.topUser?.user || 'N/A'}</p>
-                <p className="text-xs text-muted-foreground">{dashboardInsights.topUser?.calls || 0} calls</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Card className="border-border/70">
-              <CardHeader>
-                <CardTitle className="text-base">Action Center</CardTitle>
-                <CardDescription>Priority operational issues from the selected filter scope.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {(dashboardInsights.callsWithoutFollowup > 25 || dashboardInsights.overdueTasks > 12 || dashboardInsights.staleLeads > 20) && (
-                  <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    <p className="flex items-center gap-2 font-medium">
-                      <AlertTriangle className="h-4 w-4" />
-                      Critical attention needed
-                    </p>
-                    <p className="mt-1 text-xs">At least one key metric crossed a high-risk threshold in current filter scope.</p>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-                  <div>
-                    <p className="flex items-center gap-2 text-sm font-medium">
-                      <CircleAlert className="h-4 w-4 text-amber-600" />
-                      Missed/Unanswered Without Follow-up
-                    </p>
-                    <p className="text-xs text-muted-foreground">Calls needing immediate task creation.</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <p className="text-lg font-semibold">{dashboardInsights.callsWithoutFollowup}</p>
-                    <Badge variant={dashboardInsights.callsWithoutFollowup > 25 ? 'destructive' : 'secondary'}>
-                      {dashboardInsights.callsWithoutFollowup > 25 ? 'High' : 'Medium'}
-                    </Badge>
-                    <Button size="sm" variant="outline" onClick={() => setActiveSection('call-activity')}>Review</Button>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2">
-                  <div>
-                    <p className="flex items-center gap-2 text-sm font-medium">
-                      <CircleAlert className="h-4 w-4 text-orange-600" />
-                      Overdue Tasks
-                    </p>
-                    <p className="text-xs text-muted-foreground">Pending items past due date.</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <p className="text-lg font-semibold">{dashboardInsights.overdueTasks}</p>
-                    <Badge variant={dashboardInsights.overdueTasks > 12 ? 'destructive' : 'secondary'}>
-                      {dashboardInsights.overdueTasks > 12 ? 'High' : 'Medium'}
-                    </Badge>
-                    <Button size="sm" variant="outline" onClick={() => setActiveSection('settings')}>Open</Button>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
-                  <div>
-                    <p className="flex items-center gap-2 text-sm font-medium">
-                      <CircleCheck className="h-4 w-4 text-emerald-600" />
-                      Stale Leads
-                    </p>
-                    <p className="text-xs text-muted-foreground">Leads with no update in the last 14 days.</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <p className="text-lg font-semibold">{dashboardInsights.staleLeads}</p>
-                    <Badge variant={dashboardInsights.staleLeads > 20 ? 'secondary' : 'outline'}>
-                      {dashboardInsights.staleLeads > 20 ? 'Watch' : 'Normal'}
-                    </Badge>
-                    <Button size="sm" variant="outline" onClick={() => setActiveSection('leads')}>Act</Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/70">
-              <CardHeader>
-                <CardTitle className="text-base">Team Call Snapshot</CardTitle>
-                <CardDescription>Top users by call volume in the selected date range.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="max-h-[320px] overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>User</TableHead>
-                        <TableHead>Calls</TableHead>
-                        <TableHead>Connected</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {callActivityReport.byUser.slice(0, 8).map((entry) => (
-                        <TableRow key={`overview-${entry.user}`}>
-                          <TableCell className="font-medium">{entry.user}</TableCell>
-                          <TableCell>{entry.totalCalls}</TableCell>
-                          <TableCell>{entry.connectedCalls}</TableCell>
-                        </TableRow>
-                      ))}
-                      {callActivityReport.byUser.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={3} className="text-center text-muted-foreground">No call data in selected range.</TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
 
   const renderLeads = () => (
     <div className="space-y-4">
@@ -1870,7 +1711,7 @@ const AdminDashboard = () => {
                   </CardContent>
                 </Card>
               </div>
-              <div className="grid gap-4 xl:grid-cols-3">
+              <div className="grid gap
                 <Card className="border-border/70">
                   <CardHeader>
                     <CardTitle className="text-base">Outbound Leaders</CardTitle>
@@ -2172,89 +2013,158 @@ const AdminDashboard = () => {
 
   const renderActivity = () => (
     <div className="space-y-4">
+      <div className="sticky top-0 bg-background z-10 px-4 pt-6 pb-4 border-b border-border/60">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Activity</h1>
+            <p className="text-sm text-muted-foreground">{filteredActivities.length} total activities logged</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            placeholder="Search activity, lead, or user"
+            value={activitySearch}
+            onChange={(e) => setActivitySearch(e.target.value)}
+          />
+          <Select value={activityTypeFilter} onValueChange={setActivityTypeFilter}>
+            <SelectTrigger>
+              <SelectValue placeholder="All Types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="call">Call</SelectItem>
+              <SelectItem value="email">Email</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={activityUserFilter} onValueChange={setActivityUserFilter}>
+            <SelectTrigger>
+              <SelectValue placeholder="All Users" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Users</SelectItem>
+              <SelectItem value="system">System</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setActivitySearch('');
+              setActivityTypeFilter('all');
+              setActivityUserFilter('all');
+            }}
+          >
+            <Filter className="mr-2 h-4 w-4" />
+            Clear
+          </Button>
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-xl border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Time</TableHead>
+              <TableHead>Activity</TableHead>
+              <TableHead>Lead</TableHead>
+              <TableHead>User</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredActivities.map((entry) => (
+              <TableRow key={entry.id}>
+                <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy h:mm a')}</TableCell>
+                <TableCell>
+                  <p className="text-sm font-medium">{entry.title}</p>
+                  {entry.description && <p className="text-xs text-muted-foreground">{entry.description}</p>}
+                </TableCell>
+                <TableCell>{entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A'}</TableCell>
+                <TableCell>
+                  {entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System'}
+                </TableCell>
+              </TableRow>
+            ))}
+            {filteredActivities.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-muted-foreground">No activities found.</TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+
+  const renderLeads = () => (
+    <div className="space-y-4">
+      <div className="sticky top-0 bg-background z-10 px-4 pt-6 pb-4 border-b border-border/60">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Manage Leads</h1>
+            <p className="text-sm text-muted-foreground">{leadRows.length} leads available</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            placeholder="Search leads"
+            value={leadSearch}
+            onChange={(e) => setLeadSearch(e.target.value)}
+          />
+          <Select value={leadStatusFilter} onValueChange={setLeadStatusFilter}>
+            <SelectTrigger>
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="new">New</SelectItem>
+              <SelectItem value="contacted">Contacted</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setLeadSearch('');
+              setLeadStatusFilter('all');
+            }}
+          >
+            <Filter className="mr-2 h-4 w-4" />
+            Clear
+          </Button>
+        </div>
+      </div>
       <Card className="border-border/80 shadow-sm">
-        <CardContent className="space-y-4 pt-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px_auto]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search activity, lead, or user"
-                className="pl-9"
-                value={activitySearch}
-                onChange={(event) => setActivitySearch(event.target.value)}
-              />
-            </div>
-            <Select value={activityTypeFilter} onValueChange={setActivityTypeFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                {activityTypeOptions.map((type) => (
-                  <SelectItem key={type} value={type}>{type}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={activityUserFilter} onValueChange={setActivityUserFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Users" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Users</SelectItem>
-                <SelectItem value="system">System</SelectItem>
-                {activityUserOptions.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setActivitySearch('');
-                setActivityTypeFilter('all');
-                setActivityUserFilter('all');
-              }}
-            >
-              <Filter className="mr-2 h-4 w-4" />
-              Clear
-            </Button>
-          </div>
-          <div className="overflow-hidden rounded-xl border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Activity</TableHead>
-                  <TableHead>Lead</TableHead>
-                  <TableHead>User</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredActivities.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy h:mm a')}</TableCell>
-                    <TableCell>
-                      <p className="text-sm font-medium">{entry.title}</p>
-                      {entry.description && <p className="text-xs text-muted-foreground">{entry.description}</p>}
-                    </TableCell>
-                    <TableCell>{entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A'}</TableCell>
-                    <TableCell>
-                      {entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {filteredActivities.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
-                      No activity logs match the current filters.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+        <CardContent className="pt-4">
+          <LeadAssignment />
         </CardContent>
       </Card>
+
+      <Sheet open={!!leadDetailId} onOpenChange={(open) => !open && setLeadDetailId(null)}>
+        <SheetContent side="right" className="sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>{leadDetail?.name || 'Lead Details'}</SheetTitle>
+            <SheetDescription>Quick detail panel for rapid lead actions.</SheetDescription>
+          </SheetHeader>
+          {leadDetail ? (
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Contact</p>
+                <p className="font-medium">{leadDetail.phone}</p>
+                {leadDetail.email && <p className="text-muted-foreground">{leadDetail.email}</p>}
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Company</p>
+                <p className="font-medium">{leadDetail.company || '-'}</p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
+                <Badge>{leadDetail.status}</Badge>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Notes</p>
+                <p className="whitespace-pre-wrap text-muted-foreground">{leadDetail.notes || 'No notes available.'}</p>
+              </div>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 
@@ -3080,7 +2990,6 @@ const AdminDashboard = () => {
 
           <div className="min-w-0 space-y-4 overflow-hidden p-4 lg:p-5">
             <main className="min-w-0 h-[calc(100vh-env(safe-area-inset-top))] lg:h-[calc(100vh-env(safe-area-inset-top)-32px)] overflow-y-auto pr-0">
-              {activeSection === 'overview' && renderOverview()}
               {activeSection === 'leads' && renderLeads()}
               {activeSection === 'call-activity' && renderCallActivity()}
               {activeSection === 'marketplace' && renderMarketplace()}
@@ -3097,10 +3006,6 @@ const AdminDashboard = () => {
         <CommandList>
           <CommandEmpty>No quick actions found.</CommandEmpty>
           <CommandGroup heading="Navigation">
-            <CommandItem onSelect={() => { setActiveSection('overview'); setCommandOpen(false); }}>
-              <LayoutDashboard className="mr-2 h-4 w-4" />
-              Overview
-            </CommandItem>
             <CommandItem onSelect={() => { setActiveSection('leads'); setCommandOpen(false); }}>
               <Users className="mr-2 h-4 w-4" />
               Manage Leads
@@ -3117,12 +3022,6 @@ const AdminDashboard = () => {
               <Link2 className="mr-2 h-4 w-4" />
               Integrations
             </CommandItem>
-            {isSuperAdmin ? (
-              <CommandItem onSelect={() => { setActiveSection('tenants'); setCommandOpen(false); }}>
-                <Building className="mr-2 h-4 w-4" />
-                Tenants
-              </CommandItem>
-            ) : null}
             <CommandItem onSelect={() => { setActiveSection('settings'); setCommandOpen(false); }}>
               <Settings className="mr-2 h-4 w-4" />
               Users
