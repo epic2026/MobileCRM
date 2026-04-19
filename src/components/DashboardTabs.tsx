@@ -17,6 +17,8 @@ import {
   Legend,
 } from 'recharts';
 import { useCallLogs } from '@/hooks/useCallLogs';
+import { supabase } from '@/integrations/supabase/client';
+import { useEffect, useState } from 'react';
 
 const tabs = [{ label: 'Overview' }, { label: 'User Performance' }, { label: 'Call Logs' }];
 
@@ -82,17 +84,47 @@ function useOverviewData() {
     hourBuckets[h].calls += 1;
   }
 
-  return { callsByDay, users, outcomeMap, hourBuckets, missed, answered };
+  return { callLogs, callsByDay, users, outcomeMap, hourBuckets, missed, answered };
+}
+
+function useUserNames(callLogs: any[]) {
+  const [names, setNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const ids = Array.from(new Set(callLogs.map((c) => c.user_id).filter(Boolean)));
+    if (!ids.length) {
+      setNames({});
+      return;
+    }
+
+    let mounted = true;
+    (async () => {
+      const { data: profiles, error } = await supabase.from('profiles').select('id, full_name, email').in('id', ids).limit(1000);
+      if (error) {
+        console.warn('Failed to fetch profiles for dashboard', error.message || error);
+        return;
+      }
+      if (!mounted) return;
+      const map: Record<string, string> = {};
+      for (const p of profiles || []) map[p.id] = p.full_name || p.email || p.id;
+      setNames(map);
+    })();
+
+    return () => { mounted = false; };
+  }, [callLogs]);
+
+  return names;
 }
 
 const COLORS = ['#2563EB', '#10B981', '#F59E0B', '#EF4444', '#7C3AED', '#06B6D4'];
 
 function OverviewTab() {
-  const { callsByDay, users, outcomeMap, hourBuckets, missed, answered } = useOverviewData();
+  const { callLogs, callsByDay, users, outcomeMap, hourBuckets, missed, answered } = useOverviewData();
+  const names = useUserNames(callLogs);
 
-  const topOutbound = users.filter((u) => u.outgoing > 0).sort((a, b) => b.outgoing - a.outgoing).slice(0, 5);
-  const topInbound = users.filter((u) => u.incoming > 0).sort((a, b) => b.incoming - a.incoming).slice(0, 5);
-  const topDuration = users.sort((a, b) => b.duration - a.duration).slice(0, 5);
+  const topOutbound = users.filter((u) => u.outgoing > 0).sort((a, b) => b.outgoing - a.outgoing).slice(0, 5).map(u=>({ ...u, name: names[u.id] || u.id }));
+  const topInbound = users.filter((u) => u.incoming > 0).sort((a, b) => b.incoming - a.incoming).slice(0, 5).map(u=>({ ...u, name: names[u.id] || u.id }));
+  const topDuration = users.sort((a, b) => b.duration - a.duration).slice(0, 5).map(u=>({ ...u, name: names[u.id] || u.id }));
 
   const outcomeData = Array.from(outcomeMap.entries()).map(([name, value]) => ({ name, value }));
 
@@ -145,7 +177,7 @@ function OverviewTab() {
           <p className="text-sm text-gray-500 mb-4">Top outbound callers by volume.</p>
           <div className="h-40">
             <ResponsiveContainer>
-              <BarChart data={topOutbound.map((u) => ({ name: u.id, value: u.outgoing }))} layout="vertical">
+              <BarChart data={topOutbound.map((u) => ({ name: u.name || u.id, value: u.outgoing }))} layout="vertical">
                 <XAxis type="number" />
                 <YAxis dataKey="name" type="category" />
                 <Tooltip />
@@ -160,7 +192,7 @@ function OverviewTab() {
           <p className="text-sm text-gray-500 mb-4">Top inbound callers by volume.</p>
           <div className="h-40">
             <ResponsiveContainer>
-              <BarChart data={topInbound.map((u) => ({ name: u.id, value: u.incoming }))} layout="vertical">
+              <BarChart data={topInbound.map((u) => ({ name: u.name || u.id, value: u.incoming }))} layout="vertical">
                 <XAxis type="number" />
                 <YAxis dataKey="name" type="category" />
                 <Tooltip />
@@ -175,7 +207,7 @@ function OverviewTab() {
           <p className="text-sm text-gray-500 mb-4">Users with the highest total call duration.</p>
           <div className="h-40">
             <ResponsiveContainer>
-              <BarChart data={topDuration.map((u) => ({ name: u.id, value: Math.round(u.duration) }))} layout="vertical">
+              <BarChart data={topDuration.map((u) => ({ name: u.name || u.id, value: Math.round(u.duration) }))} layout="vertical">
                 <XAxis type="number" />
                 <YAxis dataKey="name" type="category" />
                 <Tooltip formatter={(v: any) => `${v} s`} />
@@ -242,6 +274,7 @@ function OverviewTab() {
 
 function UserPerformanceTab() {
   const { callLogs = [] } = useCallLogs();
+  const names = useUserNames(callLogs);
 
   const byUser = useMemo(() => {
     const map = new Map<string, any>();
@@ -254,7 +287,7 @@ function UserPerformanceTab() {
       cur.duration += l.duration || 0;
       map.set(key, cur);
     }
-    return Array.from(map.values()).slice(0, 10);
+    return Array.from(map.values()).slice(0, 10).map((u) => ({ ...u, user: names[u.user] || u.user }));
   }, [callLogs]);
 
   return (
