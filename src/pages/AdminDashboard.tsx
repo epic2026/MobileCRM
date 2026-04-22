@@ -150,6 +150,18 @@ interface UserWithRole extends Profile {
   role: 'super_admin' | 'admin' | 'sales' | null;
 }
 
+interface TenantSummary {
+  id: string;
+  name: string;
+  slug: string;
+  tenant_code: string;
+  active: boolean;
+  managerId: string | null;
+  managerName: string | null;
+  managerEmail: string | null;
+  memberCount: number;
+}
+
 type ZohoConnectorState = {
   apiDomain: string;
   accountsServer: string;
@@ -183,8 +195,10 @@ const AdminDashboard = () => {
     switchTenant,
     createTenant,
     updateTenant,
+    deleteTenant,
     assignUserToTenant,
     setTenantManager,
+    removeTenantManager,
     removeMember,
     clearUserTenant,
   } = useTenant();
@@ -198,6 +212,7 @@ const AdminDashboard = () => {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   const [deleteConfirm, setDeleteConfirm] = useState<{ userId: string; email: string; mode: 'deactivate' | 'delete' } | null>(null);
+  const [tenantDeleteConfirm, setTenantDeleteConfirm] = useState<{ tenantId: string; tenantName: string } | null>(null);
 
   const [newUserData, setNewUserData] = useState({
     email: '',
@@ -330,6 +345,52 @@ const AdminDashboard = () => {
       })) as UserWithRole[];
     },
     enabled: canAccessAdminDashboard,
+  });
+
+  const { data: tenantDirectory = [] } = useQuery({
+    queryKey: ['tenant-directory', tenants.map((tenant) => tenant.id).join(',')],
+    queryFn: async () => {
+      if (tenants.length === 0) return [] as TenantSummary[];
+
+      const tenantIds = tenants.map((tenant) => tenant.id);
+      const { data: memberships, error: membershipsError } = await supabase
+        .from('tenant_members')
+        .select('tenant_id, user_id, role')
+        .in('tenant_id', tenantIds);
+
+      if (membershipsError) throw membershipsError;
+
+      const uniqueUserIds = Array.from(new Set((memberships || []).map((entry) => entry.user_id)));
+      const { data: memberProfiles, error: memberProfilesError } = uniqueUserIds.length > 0
+        ? await supabase
+            .from('profiles')
+            .select('id, email, full_name')
+            .in('id', uniqueUserIds)
+        : { data: [], error: null };
+
+      if (memberProfilesError) throw memberProfilesError;
+
+      const profileMap = new Map((memberProfiles || []).map((entry) => [entry.id, entry]));
+
+      return tenants.map((tenant) => {
+        const tenantMemberships = (memberships || []).filter((entry) => entry.tenant_id === tenant.id);
+        const manager = tenantMemberships.find((entry) => entry.role === 'admin') || null;
+        const managerProfile = manager ? profileMap.get(manager.user_id) : null;
+
+        return {
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+          tenant_code: tenant.tenant_code,
+          active: tenant.active,
+          managerId: manager?.user_id || null,
+          managerName: managerProfile?.full_name || null,
+          managerEmail: managerProfile?.email || null,
+          memberCount: tenantMemberships.length,
+        } satisfies TenantSummary;
+      });
+    },
+    enabled: isSuperAdmin,
   });
 
   const {
@@ -2175,7 +2236,7 @@ const AdminDashboard = () => {
               <AlertTriangle className="h-5 w-5 text-amber-600" />
               <div>
                 <p className="font-medium text-amber-900">Super admin only</p>
-                <p className="text-sm text-amber-700">Only super admins can access tenant management and create tenants.</p>
+                <p className="text-sm text-amber-700">Only super admins can access tenant management.</p>
               </div>
             </div>
           </CardContent>
@@ -2184,6 +2245,10 @@ const AdminDashboard = () => {
 
       {isSuperAdmin ? (
         <Card className="border-border/80 shadow-sm">
+          <CardHeader className="border-b bg-muted/20">
+            <CardTitle>Create Tenant</CardTitle>
+            <CardDescription>Create a new tenant and assign its manager.</CardDescription>
+          </CardHeader>
           <CardContent className="space-y-4 pt-6">
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
@@ -2246,7 +2311,7 @@ const AdminDashboard = () => {
                 }
                 try {
                   await createTenant(newTenantName.trim(), newTenantSlug.trim(), newTenantManagerId);
-                  toast({ title: 'Success', description: 'Tenant created with manager and tenant ID assigned.' });
+                  toast({ title: 'Success', description: 'Tenant created successfully.' });
                   setNewTenantName('');
                   setNewTenantSlug('');
                   setNewTenantManagerId('');
@@ -2261,153 +2326,178 @@ const AdminDashboard = () => {
         </Card>
       ) : null}
 
-      {!currentTenant ? (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600" />
-              <div>
-                <p className="font-medium text-amber-900">No tenant selected</p>
-                <p className="text-sm text-amber-700">You need to create or select a tenant to use this workspace.</p>
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="border-b bg-muted/20">
+          <CardTitle>Tenants</CardTitle>
+          <CardDescription>List of tenants and their managers.</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="overflow-hidden rounded-xl border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Tenant ID</TableHead>
+                  <TableHead>Manager</TableHead>
+                  <TableHead>Members</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tenantDirectory.map((tenant) => (
+                  <TableRow key={tenant.id} className={currentTenant?.id === tenant.id ? 'bg-muted/30' : ''}>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{tenant.name}</p>
+                        <p className="text-xs text-muted-foreground">{tenant.slug}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>{tenant.tenant_code}</TableCell>
+                    <TableCell>{tenant.managerName || tenant.managerEmail || 'No manager assigned'}</TableCell>
+                    <TableCell>{tenant.memberCount}</TableCell>
+                    <TableCell>
+                      <Badge variant={tenant.active ? 'default' : 'destructive'}>
+                        {tenant.active ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="outline" onClick={() => void switchTenant(tenant.id)}>
+                          Manage
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-destructive/40 text-destructive"
+                          disabled={tenants.length <= 1}
+                          onClick={() => setTenantDeleteConfirm({ tenantId: tenant.id, tenantName: tenant.name })}
+                        >
+                          <Trash2 className="mr-1 h-3 w-3" />
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {tenantDirectory.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      No tenants found.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {currentTenant ? (
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/20">
+            <div>
+              <CardTitle>Tenant Settings</CardTitle>
+              <CardDescription>Manage organization information and manager assignment.</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setIsEditingTenant(!isEditingTenant)}>
+              <Pencil className="mr-1 h-4 w-4" />
+              {isEditingTenant ? 'Cancel' : 'Edit'}
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-6 pt-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Organization Name</Label>
+                {isEditingTenant ? (
+                  <Input
+                    value={tenantNameEdit}
+                    onChange={(e) => setTenantNameEdit(e.target.value)}
+                    placeholder="Enter organization name"
+                  />
+                ) : (
+                  <p className="rounded-lg bg-muted px-3 py-2 text-sm">{currentTenant.name}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Slug</Label>
+                <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">{currentTenant.slug}</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Tenant ID</Label>
+                <p className="rounded-lg bg-muted px-3 py-2 text-sm">{currentTenant.tenant_code}</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Badge className="w-fit" variant={currentTenant.active ? 'default' : 'destructive'}>
+                  {currentTenant.active ? 'Active' : 'Inactive'}
+                </Badge>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Tenant Manager</Label>
+                <Select
+                  value={currentTenantManager?.user_id || ''}
+                  onValueChange={async (value) => {
+                    try {
+                      await setTenantManager(currentTenant.id, value);
+                      toast({ title: 'Manager updated', description: 'Tenant manager has been updated.' });
+                    } catch (error: any) {
+                      toast({ title: 'Error', description: error.message || 'Failed to update tenant manager', variant: 'destructive' });
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Assign manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users
+                      .filter((entry) => entry.is_active && entry.role === 'admin')
+                      .map((entry) => (
+                        <SelectItem key={entry.id} value={entry.id}>
+                          {entry.full_name || entry.email} ({entry.email})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            {isSuperAdmin && tenants.length === 0 ? (
-              <Button className="mt-4" onClick={async () => {
-                try {
-                  const defaultManager = eligibleTenantManagers[0];
-                  if (!defaultManager) {
-                    toast({ title: 'Admin required', description: 'Create an unassigned admin user before creating a tenant.', variant: 'destructive' });
-                    return;
+
+            <div className="flex flex-wrap gap-2 border-t pt-4">
+              {isEditingTenant && (
+                <Button
+                  onClick={async () => {
+                    try {
+                      await updateTenant(currentTenant.id, { name: tenantNameEdit });
+                      setIsEditingTenant(false);
+                      toast({ title: 'Success', description: 'Tenant updated successfully' });
+                    } catch (error) {
+                      toast({ title: 'Error', description: 'Failed to update tenant', variant: 'destructive' });
+                    }
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Check className="mr-1 h-4 w-4" />
+                  Save Changes
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                disabled={!currentTenantManager}
+                onClick={async () => {
+                  try {
+                    await removeTenantManager(currentTenant.id);
+                    toast({ title: 'Manager removed', description: 'Tenant manager has been removed.' });
+                  } catch (error: any) {
+                    toast({ title: 'Error', description: error.message || 'Failed to remove tenant manager', variant: 'destructive' });
                   }
-                  await createTenant('My Organization', 'my-org-' + Math.random().toString(36).substring(7), defaultManager.id);
-                  toast({ title: 'Success', description: 'Tenant created successfully' });
-                } catch (error) {
-                  toast({ title: 'Error', description: 'Failed to create tenant', variant: 'destructive' });
-                }
-              }}>
-                <Plus className="mr-2 h-4 w-4" />
-                Create Tenant
+                }}
+              >
+                Remove Manager
               </Button>
-            ) : null}
+            </div>
           </CardContent>
         </Card>
       ) : null}
-
-      {isSuperAdmin && currentTenant && (
-        <>
-          {/* Tenant Switcher */}
-          {tenants.length > 1 && (
-            <Card className="border-border/80 shadow-sm">
-              <CardHeader className="border-b bg-muted/20">
-                <CardTitle>Switch Tenant</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <div className="grid gap-2">
-                  {tenants.map((tenant) => (
-                    <button
-                      key={tenant.id}
-                      onClick={() => switchTenant(tenant.id)}
-                      className={`rounded-lg border-2 p-3 text-left transition ${
-                        currentTenant.id === tenant.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-transparent bg-muted hover:bg-muted/80'
-                      }`}
-                    >
-                      <p className="font-medium">{tenant.name}</p>
-                      <p className="text-xs text-muted-foreground">{tenant.slug}</p>
-                    </button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Tenant Settings */}
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/20">
-              <div>
-                <CardTitle>Tenant Settings</CardTitle>
-                <CardDescription>Manage organization information and branding.</CardDescription>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsEditingTenant(!isEditingTenant)}
-              >
-                <Pencil className="mr-1 h-4 w-4" />
-                {isEditingTenant ? 'Cancel' : 'Edit'}
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-6 pt-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Organization Name</Label>
-                  {isEditingTenant ? (
-                    <Input
-                      value={tenantNameEdit}
-                      onChange={(e) => setTenantNameEdit(e.target.value)}
-                      placeholder="Enter organization name"
-                    />
-                  ) : (
-                    <p className="rounded-lg bg-muted px-3 py-2 text-sm">{currentTenant.name}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Slug</Label>
-                  <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">{currentTenant.slug}</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Tenant ID</Label>
-                  <p className="rounded-lg bg-muted px-3 py-2 text-sm">{currentTenant.tenant_code}</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Subscription Plan</Label>
-                  <Badge variant="outline" className="w-fit">
-                    {currentTenant.subscription_plan.toUpperCase()}
-                  </Badge>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Badge className="w-fit" variant={currentTenant.active ? 'default' : 'destructive'}>
-                    {currentTenant.active ? 'Active' : 'Inactive'}
-                  </Badge>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Tenant Manager</Label>
-                  <p className="rounded-lg bg-muted px-3 py-2 text-sm">
-                    {currentTenantManager?.user?.full_name || currentTenantManager?.user?.email || 'Not assigned'}
-                  </p>
-                </div>
-              </div>
-
-              {isEditingTenant && (
-                <div className="flex gap-2 border-t pt-4">
-                  <Button
-                    onClick={async () => {
-                      try {
-                        await updateTenant(currentTenant.id, { name: tenantNameEdit });
-                        setIsEditingTenant(false);
-                        toast({ title: 'Success', description: 'Tenant updated successfully' });
-                      } catch (error) {
-                        toast({ title: 'Error', description: 'Failed to update tenant', variant: 'destructive' });
-                      }
-                    }}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    <Check className="mr-1 h-4 w-4" />
-                    Save Changes
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </>
-      )}
     </div>
   );
 
@@ -2436,7 +2526,7 @@ const AdminDashboard = () => {
               <AlertTriangle className="h-5 w-5 text-amber-600" />
               <div>
                 <p className="font-medium text-amber-900">No tenant selected</p>
-                <p className="text-sm text-amber-700">Switch to a tenant to manage team members.</p>
+                <p className="text-sm text-amber-700">Select a tenant from the list to manage team members.</p>
               </div>
             </div>
           </CardContent>
@@ -2690,19 +2780,6 @@ const AdminDashboard = () => {
                 </form>
               </DialogContent>
             </Dialog>
-            </div>
-            <div className="rounded-xl border p-4">
-              <p className="mb-2 text-sm font-semibold">Permissions Matrix</p>
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="rounded-lg border px-3 py-2 text-sm">
-                  <p className="font-medium">Admin</p>
-                  <p className="text-muted-foreground">Full control: users, integrations, settings, analytics, and exports.</p>
-                </div>
-                <div className="rounded-lg border px-3 py-2 text-sm">
-                  <p className="font-medium">Sales</p>
-                  <p className="text-muted-foreground">Lead and activity operations only. No admin configuration access.</p>
-                </div>
-              </div>
             </div>
             {selectedUserIds.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2">
@@ -3107,6 +3184,38 @@ const AdminDashboard = () => {
             >
               <Trash2 className="mr-2 h-4 w-4" />
               {deleteConfirm?.mode === 'delete' ? 'Delete Permanently' : 'Deactivate'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!tenantDeleteConfirm} onOpenChange={() => setTenantDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Tenant</AlertDialogTitle>
+            <AlertDialogDescription>
+              {tenantDeleteConfirm
+                ? `This will delete ${tenantDeleteConfirm.tenantName}. Any users and tenant data linked to it will be moved to Handover before deletion.`
+                : 'Delete the selected tenant.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (!tenantDeleteConfirm) return;
+                try {
+                  await deleteTenant(tenantDeleteConfirm.tenantId);
+                  toast({ title: 'Tenant deleted', description: 'Tenant has been deleted and moved into Handover.' });
+                  setTenantDeleteConfirm(null);
+                } catch (error: any) {
+                  toast({ title: 'Error', description: error.message || 'Failed to delete tenant', variant: 'destructive' });
+                }
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Tenant
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -565,8 +565,10 @@ BEGIN
     SELECT tenant_id INTO lead_tenant_id FROM public.leads WHERE id = NEW.lead_id;
   END IF;
 
-  IF TG_TABLE_NAME = 'call_recordings' AND NEW.call_log_id IS NOT NULL THEN
-    SELECT tenant_id INTO call_log_tenant_id FROM public.call_logs WHERE id = NEW.call_log_id;
+  IF TG_TABLE_NAME = 'call_recordings' THEN
+    IF NEW.call_log_id IS NOT NULL THEN
+      SELECT tenant_id INTO call_log_tenant_id FROM public.call_logs WHERE id = NEW.call_log_id;
+    END IF;
   END IF;
 
   NEW.tenant_id := COALESCE(lead_tenant_id, call_log_tenant_id, NEW.tenant_id, owner_tenant_id, actor_tenant_id);

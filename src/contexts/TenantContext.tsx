@@ -39,8 +39,10 @@ interface TenantContextType {
   switchTenant: (tenantId: string) => Promise<void>;
   createTenant: (name: string, slug: string, managerUserId: string) => Promise<Tenant>;
   updateTenant: (tenantId: string, updates: Partial<Tenant>) => Promise<void>;
+  deleteTenant: (tenantId: string) => Promise<void>;
   assignUserToTenant: (tenantId: string, userId: string) => Promise<void>;
   setTenantManager: (tenantId: string, userId: string) => Promise<void>;
+  removeTenantManager: (tenantId: string) => Promise<void>;
   removeMember: (tenantId: string, userId: string) => Promise<void>;
   clearUserTenant: (userId: string) => Promise<void>;
   updateMemberRole: (tenantId: string, userId: string, role: TenantRole) => Promise<void>;
@@ -259,6 +261,17 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
     await refreshTenants();
   }, [isSuperAdmin, refreshTenants]);
 
+  const deleteTenant = useCallback(async (tenantId: string) => {
+    if (!isSuperAdmin) throw new Error('Only super admins can delete tenants');
+
+    const { error } = await supabase.rpc('admin_delete_tenant', {
+      p_tenant_id: tenantId,
+    });
+
+    if (error) throw error;
+    await refreshTenants();
+  }, [isSuperAdmin, refreshTenants]);
+
   const assignUserToTenant = useCallback(async (tenantId: string, userId: string) => {
     if (!isSuperAdmin) throw new Error('Only super admins can assign tenant users');
 
@@ -277,6 +290,17 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
     const { error } = await supabase.rpc('admin_set_tenant_manager', {
       p_tenant_id: tenantId,
       p_user_id: userId,
+    });
+
+    if (error) throw error;
+    await refreshTenants();
+  }, [isSuperAdmin, refreshTenants]);
+
+  const removeTenantManager = useCallback(async (tenantId: string) => {
+    if (!isSuperAdmin) throw new Error('Only super admins can remove tenant managers');
+
+    const { error } = await supabase.rpc('admin_remove_tenant_manager', {
+      p_tenant_id: tenantId,
     });
 
     if (error) throw error;
@@ -320,8 +344,10 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
     switchTenant,
     createTenant,
     updateTenant,
+    deleteTenant,
     assignUserToTenant,
     setTenantManager,
+    removeTenantManager,
     removeMember,
     clearUserTenant,
     updateMemberRole,
@@ -333,9 +359,11 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
     clearUserTenant,
     createTenant,
     currentTenant,
+    deleteTenant,
     isLoadingTenants,
     refreshTenants,
     removeMember,
+    removeTenantManager,
     setTenantManager,
     switchTenant,
     tenantMembers,
