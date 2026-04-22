@@ -27,6 +27,7 @@ import { format } from 'date-fns';
 import type { Database } from '@/integrations/supabase/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import LeadImport from '@/components/admin/LeadImport';
+import { useTenant } from '@/contexts/TenantContext';
 
 type Lead = Database['public']['Tables']['leads']['Row'];
 type LeadStatus = Database['public']['Enums']['lead_status'];
@@ -60,6 +61,7 @@ const statusColors: Record<LeadStatus, string> = {
 const LeadAssignment = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { currentTenant } = useTenant();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<LeadStatus | 'all'>('all');
@@ -70,26 +72,31 @@ const LeadAssignment = () => {
 
   // Fetch all leads (admin sees all)
   const { data: leads = [], isLoading: leadsLoading } = useQuery({
-    queryKey: ['admin-leads'],
+    queryKey: ['admin-leads', currentTenant?.id],
     queryFn: async () => {
+      if (!currentTenant) return [];
       const { data, error } = await supabase
         .from('leads')
         .select('*')
+        .eq('tenant_id', currentTenant.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       return data as Lead[];
     },
+    enabled: !!currentTenant,
   });
 
   // Fetch sales users
   const { data: salesUsers = [] } = useQuery({
-    queryKey: ['sales-users'],
+    queryKey: ['sales-users', currentTenant?.id],
     queryFn: async () => {
+      if (!currentTenant) return [];
       const { data: roles, error: rolesError } = await supabase
         .from('user_roles')
         .select('user_id')
-        .eq('role', 'sales');
+        .eq('role', 'sales')
+        .eq('tenant_id', currentTenant.id);
 
       if (rolesError) throw rolesError;
 
@@ -105,6 +112,7 @@ const LeadAssignment = () => {
       if (profilesError) throw profilesError;
       return profiles as SalesUser[];
     },
+    enabled: !!currentTenant,
   });
 
   // Create a map of user_id to user info
@@ -121,7 +129,7 @@ const LeadAssignment = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-leads', currentTenant?.id] });
       toast({
         title: 'Leads Updated',
         description: `${selectedLeads.length} leads have been ${selectedSalesUser ? 'assigned' : 'unassigned'}.`,

@@ -17,6 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Upload, FileSpreadsheet, Check, X, AlertCircle } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { useTenant } from '@/contexts/TenantContext';
 
 interface ParsedLead {
   name: string;
@@ -34,6 +35,7 @@ const LeadImport = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { currentTenant } = useTenant();
 
   const [parsedLeads, setParsedLeads] = useState<ParsedLead[]>([]);
   const [fileName, setFileName] = useState<string>('');
@@ -112,6 +114,10 @@ const LeadImport = () => {
 
   const importLeads = useMutation({
     mutationFn: async (leads: ParsedLead[]) => {
+      if (!currentTenant) {
+        throw new Error('Select a tenant before importing leads.');
+      }
+
       setIsImporting(true);
       const validLeads = leads.filter((l) => l.isValid);
       let imported = 0;
@@ -126,6 +132,7 @@ const LeadImport = () => {
           notes: lead.notes || null,
           value: lead.value || null,
           status: 'new',
+          tenant_id: currentTenant.id,
           user_id: null, // Unassigned - admin will assign later
         });
 
@@ -138,7 +145,7 @@ const LeadImport = () => {
       return imported;
     },
     onSuccess: (count) => {
-      queryClient.invalidateQueries({ queryKey: ['admin-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-leads', currentTenant?.id] });
       queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
       toast({
         title: 'Import Complete',

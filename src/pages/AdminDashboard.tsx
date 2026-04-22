@@ -175,7 +175,19 @@ type SyncLogItem = {
 
 const AdminDashboard = () => {
   const { user, role, isLoading, signOut } = useAuth();
-  const { currentTenant, tenants, tenantRole, tenantMembers, switchTenant, createTenant, updateTenant, inviteMember, removeMember } = useTenant();
+  const {
+    currentTenant,
+    tenants,
+    tenantRole,
+    tenantMembers,
+    switchTenant,
+    createTenant,
+    updateTenant,
+    assignUserToTenant,
+    setTenantManager,
+    removeMember,
+    clearUserTenant,
+  } = useTenant();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -239,15 +251,13 @@ const AdminDashboard = () => {
   const [lastUpdatedAt, setLastUpdatedAt] = useState(format(new Date(), 'PPP p'));
 
   // Tenant management state
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member');
-  const [isInvitingMember, setIsInvitingMember] = useState(false);
+  const [selectedTenantUserId, setSelectedTenantUserId] = useState('');
+  const [isAssigningTenantUser, setIsAssigningTenantUser] = useState(false);
   const [tenantNameEdit, setTenantNameEdit] = useState(currentTenant?.name || '');
   const [isEditingTenant, setIsEditingTenant] = useState(false);
   const [newTenantName, setNewTenantName] = useState('');
   const [newTenantSlug, setNewTenantSlug] = useState('');
   const [newTenantManagerId, setNewTenantManagerId] = useState('');
-  const [newTenantManagerEmail, setNewTenantManagerEmail] = useState('');
 
   const isSuperAdmin = role === 'super_admin';
   const canAccessAdminDashboard = role === 'admin' || role === 'super_admin';
@@ -263,6 +273,10 @@ const AdminDashboard = () => {
       setActiveSection('overview');
     }
   }, [activeSection, isSuperAdmin]);
+
+  useEffect(() => {
+    setTenantNameEdit(currentTenant?.name || '');
+  }, [currentTenant]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem('admin-zoho-connector');
@@ -416,10 +430,34 @@ const AdminDashboard = () => {
 
   const leadMap = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads]);
   const userMap = useMemo(() => new Map(users.map((entry) => [entry.id, entry])), [users]);
-  // Users eligible to be tenant admin (admin or sales, active)
+  const currentTenantMemberIds = useMemo(
+    () => new Set(tenantMembers.map((member) => member.user_id)),
+    [tenantMembers],
+  );
+
   const eligibleTenantManagers = useMemo(
-    () => users.filter((entry) => (entry.role === 'admin' || entry.role === 'sales') && entry.is_active),
-    [users],
+    () => users.filter((entry) =>
+      entry.role === 'admin'
+      && entry.is_active
+      && !currentTenantMemberIds.has(entry.id)
+      && !entry.tenant_id,
+    ),
+    [currentTenantMemberIds, users],
+  );
+
+  const currentTenantManager = useMemo(
+    () => tenantMembers.find((member) => member.role === 'admin') || null,
+    [tenantMembers],
+  );
+
+  const availableTenantUsers = useMemo(
+    () => users.filter((entry) =>
+      entry.is_active
+      && entry.role !== 'super_admin'
+      && !currentTenantMemberIds.has(entry.id)
+      && !entry.tenant_id,
+    ),
+    [currentTenantMemberIds, users],
   );
 
   const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -1419,46 +1457,6 @@ const AdminDashboard = () => {
     }
   };
 
-  const renderLeads = () => (
-    <div className="space-y-4">
-      <Card className="border-border/80 shadow-sm">
-        <CardContent className="pt-4">
-          <LeadAssignment />
-        </CardContent>
-      </Card>
-
-      <Sheet open={!!leadDetailId} onOpenChange={(open) => !open && setLeadDetailId(null)}>
-        <SheetContent side="right" className="sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle>{leadDetail?.name || 'Lead Details'}</SheetTitle>
-            <SheetDescription>Quick detail panel for rapid lead actions.</SheetDescription>
-          </SheetHeader>
-          {leadDetail ? (
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Contact</p>
-                <p className="font-medium">{leadDetail.phone}</p>
-                {leadDetail.email && <p className="text-muted-foreground">{leadDetail.email}</p>}
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Company</p>
-                <p className="font-medium">{leadDetail.company || '-'}</p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
-                <Badge>{leadDetail.status}</Badge>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Notes</p>
-                <p className="whitespace-pre-wrap text-muted-foreground">{leadDetail.notes || 'No notes available.'}</p>
-              </div>
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
-    </div>
-  );
-
   const renderCallActivity = () => (
     <div className="space-y-4">
       {/* Minimalist Control Strip */}
@@ -1711,7 +1709,7 @@ const AdminDashboard = () => {
                   </CardContent>
                 </Card>
               </div>
-              <div className="grid gap
+              <div className="grid gap-4 xl:grid-cols-3">
                 <Card className="border-border/70">
                   <CardHeader>
                     <CardTitle className="text-base">Outbound Leaders</CardTitle>
@@ -2187,43 +2185,6 @@ const AdminDashboard = () => {
       {isSuperAdmin ? (
         <Card className="border-border/80 shadow-sm">
           <CardContent className="space-y-4 pt-6">
-            <div className="grid gap-3 sm:grid-cols-[1fr_200px]">
-              <div className="space-y-2">
-                <Label htmlFor="quick-tenant-manager-email">Manager Email</Label>
-                <Input
-                  id="quick-tenant-manager-email"
-                  type="email"
-                  value={newTenantManagerEmail}
-                  onChange={(e) => setNewTenantManagerEmail(e.target.value)}
-                  placeholder="admin@tenant.com"
-                />
-              </div>
-              <Button
-                variant="outline"
-                className="h-fit"
-                onClick={async () => {
-                  try {
-                    if (!newTenantManagerEmail.trim()) {
-                      toast({ title: 'Missing details', description: 'Tenant manager email is required', variant: 'destructive' });
-                      return;
-                    }
-                    const suffix = Math.random().toString(36).slice(2, 7);
-                    const quickName = `Tenant ${suffix.toUpperCase()}`;
-                    const quickSlug = `tenant-${suffix}`;
-                    const createdTenant = await createTenant(quickName, quickSlug);
-                    await inviteMember(createdTenant.id, newTenantManagerEmail.trim(), 'admin');
-                    toast({ title: 'Success', description: `Created ${quickName} and invited tenant manager` });
-                    setNewTenantManagerEmail('');
-                  } catch (error: any) {
-                    toast({ title: 'Error', description: error.message || 'Failed to create tenant', variant: 'destructive' });
-                  }
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Quick Create
-              </Button>
-            </div>
-
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="new-tenant-name">Tenant Name</Label>
@@ -2256,7 +2217,7 @@ const AdminDashboard = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="new-tenant-manager">Tenant Manager (Admin/Sales)</Label>
+                <Label htmlFor="new-tenant-manager">Tenant Manager (Admin only)</Label>
                 <Select
                   value={newTenantManagerId}
                   onValueChange={setNewTenantManagerId}
@@ -2266,7 +2227,7 @@ const AdminDashboard = () => {
                   </SelectTrigger>
                   <SelectContent>
                     {eligibleTenantManagers.length === 0 && (
-                      <SelectItem value="" disabled>No eligible users</SelectItem>
+                      <SelectItem value="no-admin-users" disabled>No unassigned admin users available</SelectItem>
                     )}
                     {eligibleTenantManagers.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
@@ -2284,11 +2245,8 @@ const AdminDashboard = () => {
                   return;
                 }
                 try {
-                  const createdTenant = await createTenant(newTenantName.trim(), newTenantSlug.trim());
-                  const selectedUser = eligibleTenantManagers.find(u => u.id === newTenantManagerId);
-                  if (!selectedUser) throw new Error('Selected user not found');
-                  await inviteMember(createdTenant.id, selectedUser.email, 'admin');
-                  toast({ title: 'Success', description: 'Tenant created and manager assigned' });
+                  await createTenant(newTenantName.trim(), newTenantSlug.trim(), newTenantManagerId);
+                  toast({ title: 'Success', description: 'Tenant created with manager and tenant ID assigned.' });
                   setNewTenantName('');
                   setNewTenantSlug('');
                   setNewTenantManagerId('');
@@ -2316,7 +2274,12 @@ const AdminDashboard = () => {
             {isSuperAdmin && tenants.length === 0 ? (
               <Button className="mt-4" onClick={async () => {
                 try {
-                  await createTenant('My Organization', 'my-org-' + Math.random().toString(36).substring(7));
+                  const defaultManager = eligibleTenantManagers[0];
+                  if (!defaultManager) {
+                    toast({ title: 'Admin required', description: 'Create an unassigned admin user before creating a tenant.', variant: 'destructive' });
+                    return;
+                  }
+                  await createTenant('My Organization', 'my-org-' + Math.random().toString(36).substring(7), defaultManager.id);
                   toast({ title: 'Success', description: 'Tenant created successfully' });
                 } catch (error) {
                   toast({ title: 'Error', description: 'Failed to create tenant', variant: 'destructive' });
@@ -2396,6 +2359,11 @@ const AdminDashboard = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <Label>Tenant ID</Label>
+                  <p className="rounded-lg bg-muted px-3 py-2 text-sm">{currentTenant.tenant_code}</p>
+                </div>
+
+                <div className="space-y-2">
                   <Label>Subscription Plan</Label>
                   <Badge variant="outline" className="w-fit">
                     {currentTenant.subscription_plan.toUpperCase()}
@@ -2407,6 +2375,13 @@ const AdminDashboard = () => {
                   <Badge className="w-fit" variant={currentTenant.active ? 'default' : 'destructive'}>
                     {currentTenant.active ? 'Active' : 'Inactive'}
                   </Badge>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tenant Manager</Label>
+                  <p className="rounded-lg bg-muted px-3 py-2 text-sm">
+                    {currentTenantManager?.user?.full_name || currentTenantManager?.user?.email || 'Not assigned'}
+                  </p>
                 </div>
               </div>
 
@@ -2469,34 +2444,27 @@ const AdminDashboard = () => {
       );
     }
 
-    const tenantAlreadyHasAdmin = tenantMembers.some((member) => member.role === 'admin');
-
     return (
       <div className="space-y-4">
-        {/* Invite Member */}
+        {/* Add Existing User */}
         <Card className="border-border/80 shadow-sm">
           <CardContent className="space-y-4 pt-6">
             <div className="grid gap-4">
               <div className="space-y-2">
-                <Label htmlFor="invite-email">Email Address</Label>
-                <Input
-                  id="invite-email"
-                  type="email"
-                  placeholder="colleague@company.com"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="invite-role">Role</Label>
-                <Select value={inviteRole} onValueChange={(value: any) => setInviteRole(value)}>
-                  <SelectTrigger id="invite-role">
-                    <SelectValue />
+                <Label htmlFor="tenant-user-select">Add Existing User</Label>
+                <Select value={selectedTenantUserId} onValueChange={setSelectedTenantUserId}>
+                  <SelectTrigger id="tenant-user-select">
+                    <SelectValue placeholder="Select an unassigned user" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="member">User</SelectItem>
-                    <SelectItem value="admin" disabled={tenantAlreadyHasAdmin}>Admin</SelectItem>
+                    {availableTenantUsers.length === 0 && (
+                      <SelectItem value="no-tenant-users" disabled>No unassigned users available</SelectItem>
+                    )}
+                    {availableTenantUsers.map((entry) => (
+                      <SelectItem key={entry.id} value={entry.id}>
+                        {entry.full_name || entry.email} ({entry.role || 'No role'})
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -2504,41 +2472,33 @@ const AdminDashboard = () => {
 
             <Button
               onClick={async () => {
-                if (!inviteEmail) {
-                  toast({ title: 'Error', description: 'Please enter an email address' });
-                  return;
-                }
-                if (inviteRole === 'admin' && tenantAlreadyHasAdmin) {
-                  toast({
-                    title: 'Admin already assigned',
-                    description: 'This tenant already has an admin. Remove or demote them first.',
-                    variant: 'destructive',
-                  });
+                if (!selectedTenantUserId) {
+                  toast({ title: 'Error', description: 'Select a user to assign to this tenant.' });
                   return;
                 }
                 try {
-                  setIsInvitingMember(true);
-                  await inviteMember(currentTenant.id, inviteEmail, inviteRole);
+                  setIsAssigningTenantUser(true);
+                  await assignUserToTenant(currentTenant.id, selectedTenantUserId);
                   toast({
-                    title: 'Invite sent',
-                    description: `Invitation sent to ${inviteEmail}`,
+                    title: 'User assigned',
+                    description: 'User has been linked to this tenant.',
                   });
-                  setInviteEmail('');
+                  setSelectedTenantUserId('');
                 } catch (error: any) {
                   toast({
                     title: 'Error',
-                    description: error.message || 'Failed to send invite',
+                    description: error.message || 'Failed to assign tenant user',
                     variant: 'destructive',
                   });
                 } finally {
-                  setIsInvitingMember(false);
+                  setIsAssigningTenantUser(false);
                 }
               }}
-              disabled={isInvitingMember || !inviteEmail}
+              disabled={isAssigningTenantUser || !selectedTenantUserId}
               className="w-full"
             >
               <Mail className="mr-2 h-4 w-4" />
-              {isInvitingMember ? 'Sending...' : 'Send Invite'}
+              {isAssigningTenantUser ? 'Assigning...' : 'Add User To Tenant'}
             </Button>
           </CardContent>
         </Card>
@@ -2590,10 +2550,24 @@ const AdminDashboard = () => {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem disabled>Change Role (coming soon)</DropdownMenuItem>
+                                {member.role !== 'admin' && (
+                                  <DropdownMenuItem
+                                    onClick={async () => {
+                                      try {
+                                        await setTenantManager(currentTenant.id, member.user_id);
+                                        toast({ title: 'Manager updated', description: 'Tenant manager has been updated.' });
+                                      } catch (error: any) {
+                                        toast({ title: 'Error', description: error.message || 'Failed to update tenant manager', variant: 'destructive' });
+                                      }
+                                    }}
+                                  >
+                                    <Shield className="mr-2 h-4 w-4" />
+                                    Make Manager
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
                                   className="text-destructive"
-                                  disabled={member.user_id === user?.id}
+                                  disabled={member.user_id === user?.id || member.role === 'admin'}
                                   onClick={async () => {
                                     try {
                                       await removeMember(currentTenant.id, member.user_id);
@@ -2625,13 +2599,17 @@ const AdminDashboard = () => {
   };
 
   const handleAssignTenant = async (userId: string, tenantId: string) => {
-    const update = tenantId ? { tenant_id: tenantId } : { tenant_id: null };
-    const { error } = await supabase.from('profiles').update(update).eq('id', userId);
-    if (error) {
-      toast({ title: 'Failed to assign tenant', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: 'Tenant assigned', description: 'User tenant has been updated.' });
+    try {
+      if (tenantId) {
+        await assignUserToTenant(tenantId, userId);
+        toast({ title: 'Tenant assigned', description: 'User has been assigned to the selected tenant.' });
+      } else {
+        await clearUserTenant(userId);
+        toast({ title: 'Tenant cleared', description: 'User is no longer assigned to a tenant.' });
+      }
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    } catch (error: any) {
+      toast({ title: 'Failed to update tenant', description: error.message || 'Unable to update tenant assignment.', variant: 'destructive' });
     }
   };
 

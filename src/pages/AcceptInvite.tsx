@@ -16,15 +16,13 @@ const AcceptInvite = () => {
 
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
-  const [tenantId, setTenantId] = useState('');
 
   const handleAccept = async () => {
     if (!token) return;
 
     try {
       setStatus('loading');
-      const id = await acceptInvite(token);
-      if (id) setTenantId(id as string);
+      await acceptInvite(token);
       setStatus('success');
     } catch (error: any) {
       setErrorMessage(error.message || 'Failed to accept invite');
