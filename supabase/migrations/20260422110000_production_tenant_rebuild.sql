@@ -419,14 +419,12 @@ WHERE la.tenant_id IS NULL;
 UPDATE public.call_recordings cr
 SET tenant_id = COALESCE(
   ld.tenant_id,
-  cl.tenant_id,
   cr.tenant_id,
   public.user_primary_tenant_id(cr.user_id)
 )
 FROM public.leads ld
-LEFT JOIN public.call_logs cl ON cl.id = cr.call_log_id
 WHERE cr.lead_id = ld.id
-  AND cr.tenant_id IS DISTINCT FROM COALESCE(ld.tenant_id, cl.tenant_id, cr.tenant_id, public.user_primary_tenant_id(cr.user_id));
+  AND cr.tenant_id IS DISTINCT FROM COALESCE(ld.tenant_id, cr.tenant_id, public.user_primary_tenant_id(cr.user_id));
 
 UPDATE public.call_recordings cr
 SET tenant_id = COALESCE(
