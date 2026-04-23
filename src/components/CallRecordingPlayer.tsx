@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Pause, Clock, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import { CallRecording, useCallRecordings } from '@/hooks/useCallRecordings';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -23,8 +26,18 @@ const normalizeActionText = (action: string | { action: string; priority?: strin
   return parts.join(' ');
 };
 
+const shouldAutoCreateTask = (actions: (string | { action: string; priority?: string; timeframe?: string })[]) => {
+  return actions.some((action) => {
+    const text = normalizeActionText(action).toLowerCase();
+    return text.includes('schedule a call') || text.includes('create a task');
+  });
+};
+
 const CallRecordingPlayer = ({ recording, compact = false }: CallRecordingPlayerProps) => {
   const { analyzeRecording } = useCallRecordings();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -32,6 +45,66 @@ const CallRecordingPlayer = ({ recording, compact = false }: CallRecordingPlayer
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
   const [isRetryingAnalysis, setIsRetryingAnalysis] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const alreadyCreatedTaskRef = useRef(false);
+
+  useEffect(() => {
+    if (
+      alreadyCreatedTaskRef.current ||
+      !recording.ai_next_actions?.length ||
+      !recording.lead_id ||
+      !recording.processed_at ||
+      !shouldAutoCreateTask(recording.ai_next_actions)
+    ) {
+      return;
+    }
+
+    alreadyCreatedTaskRef.current = true;
+
+    const createAIRecommendedTask = async () => {
+      const normalizedActions = recording.ai_next_actions
+        .map(normalizeActionText)
+        .filter(Boolean);
+
+      if (!normalizedActions.length) return;
+
+      const description = `AI suggested action items from recording ${recording.id}:\n${normalizedActions.join('\n')}`;
+
+      try {
+        const { data: existingTasks } = await supabase
+          .from('lead_tasks')
+          .select('id')
+          .eq('lead_id', recording.lead_id)
+          .ilike('description', `%${recording.id}%`)
+          .limit(1);
+
+        if (existingTasks?.length) return;
+
+        const { error } = await supabase.from('lead_tasks').insert({
+          lead_id: recording.lead_id,
+          title: normalizedActions[0]?.slice(0, 80) || 'Follow up after call',
+          description,
+          due_date: null,
+          status: 'pending',
+          user_id: user?.id ?? null,
+        });
+
+        if (error) {
+          console.error('AI task creation failed:', error);
+          return;
+        }
+
+        toast({
+          title: 'AI Task Created',
+          description: 'A follow-up task was created from AI next actions.',
+        });
+        queryClient.invalidateQueries({ queryKey: ['lead_tasks'] });
+      } catch (error) {
+        console.error('AI task creation error:', error);
+      }
+    };
+
+    void createAIRecommendedTask();
+  }, [recording.ai_next_actions, recording.lead_id, recording.processed_at, recording.id, queryClient, toast, user?.id]);
 
   useEffect(() => {
     const loadAudioUrl = async () => {

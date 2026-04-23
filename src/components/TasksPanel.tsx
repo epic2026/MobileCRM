@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2, Clock, AlertCircle, Calendar, User, Plus, X } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { CheckCircle2, Clock, AlertCircle, Calendar, User, Plus, X, Edit2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLeads } from '@/hooks/useLeads';
@@ -15,6 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 
@@ -42,7 +49,7 @@ const statusConfig: Record<TaskStatus, { icon: React.ReactNode; color: string; l
   cancelled: { icon: <X className="w-4 h-4" />, color: 'bg-muted text-muted-foreground border-muted', label: 'Cancelled' },
 };
 
-const TaskCard = ({ task, onStatusChange }: { task: Task; onStatusChange: (id: string, status: TaskStatus) => void }) => {
+const TaskCard = ({ task, onStatusChange, onEdit }: { task: Task; onStatusChange: (id: string, status: TaskStatus) => void; onEdit: (task: Task) => void }) => {
   const config = statusConfig[task.status];
   const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed' && task.status !== 'cancelled';
 
@@ -69,17 +76,26 @@ const TaskCard = ({ task, onStatusChange }: { task: Task; onStatusChange: (id: s
             </div>
           )}
         </div>
-        <Select value={task.status} onValueChange={(v) => onStatusChange(task.id, v as TaskStatus)}>
-          <SelectTrigger className={`w-auto h-7 text-xs ${config.color} border`}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="in_progress">In Progress</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col items-end gap-2">
+          <Select value={task.status} onValueChange={(v) => onStatusChange(task.id, v as TaskStatus)}>
+            <SelectTrigger className={`w-auto h-7 text-xs ${config.color} border`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="in_progress">In Progress</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+          <button
+            type="button"
+            onClick={() => onEdit(task)}
+            className="h-8 w-8 rounded-lg bg-secondary text-muted-foreground flex items-center justify-center"
+          >
+            <Edit2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -88,15 +104,39 @@ const TaskCard = ({ task, onStatusChange }: { task: Task; onStatusChange: (id: s
 const TasksPanel = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { leads } = useLeads();
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all');
-  const [isAddingTask, setIsAddingTask] = useState(false);
+  const [isTaskSheetOpen, setIsTaskSheetOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskForm, setTaskForm] = useState({
     lead_id: '',
     title: '',
     message: '',
     due_date: '',
+    status: 'pending' as TaskStatus,
   });
+
+  const resetTaskForm = () => {
+    setEditingTask(null);
+    setTaskForm({ lead_id: '', title: '', message: '', due_date: '', status: 'pending' });
+  };
+
+  const openTaskSheet = (task?: Task | null) => {
+    if (task) {
+      setEditingTask(task);
+      setTaskForm({
+        lead_id: task.lead_id,
+        title: task.title,
+        message: task.description ?? '',
+        due_date: task.due_date ?? '',
+        status: task.status,
+      });
+    } else {
+      resetTaskForm();
+    }
+    setIsTaskSheetOpen(true);
+  };
 
   const { data: tasks = [], isLoading, refetch } = useQuery({
     queryKey: ['all_tasks', user?.id],
@@ -130,7 +170,7 @@ const TasksPanel = () => {
     }
   };
 
-  const createManualTask = async () => {
+  const saveTask = async () => {
     const title = taskForm.title.trim();
     if (!title) {
       toast({ title: 'Missing title', description: 'Please enter a task title.', variant: 'destructive' });
@@ -142,23 +182,45 @@ const TasksPanel = () => {
     }
 
     const dueDateIso = taskForm.due_date ? new Date(taskForm.due_date).toISOString() : null;
-    const { error } = await supabase.from('lead_tasks').insert({
-      lead_id: taskForm.lead_id,
-      title,
-      description: taskForm.message.trim() || null,
-      due_date: dueDateIso,
-      status: 'pending',
-      user_id: user?.id ?? null,
-    });
 
-    if (error) {
-      toast({ title: 'Error', description: 'Failed to create task.', variant: 'destructive' });
-      return;
+    if (editingTask) {
+      const { error } = await supabase
+        .from('lead_tasks')
+        .update({
+          lead_id: taskForm.lead_id,
+          title,
+          description: taskForm.message.trim() || null,
+          due_date: dueDateIso,
+          status: taskForm.status,
+        })
+        .eq('id', editingTask.id);
+
+      if (error) {
+        toast({ title: 'Error', description: 'Failed to update task.', variant: 'destructive' });
+        return;
+      }
+
+      toast({ title: 'Task updated', description: 'Task details have been saved.' });
+    } else {
+      const { error } = await supabase.from('lead_tasks').insert({
+        lead_id: taskForm.lead_id,
+        title,
+        description: taskForm.message.trim() || null,
+        due_date: dueDateIso,
+        status: taskForm.status,
+        user_id: user?.id ?? null,
+      });
+
+      if (error) {
+        toast({ title: 'Error', description: 'Failed to create task.', variant: 'destructive' });
+        return;
+      }
+
+      toast({ title: 'Task created', description: 'Task saved successfully.' });
     }
 
-    toast({ title: 'Task created', description: 'Manual task added successfully.' });
-    setTaskForm({ lead_id: '', title: '', message: '', due_date: '' });
-    setIsAddingTask(false);
+    resetTaskForm();
+    setIsTaskSheetOpen(false);
     refetch();
   };
 
@@ -215,57 +277,82 @@ const TasksPanel = () => {
             <h1 className="text-2xl font-bold text-foreground">Tasks</h1>
             <p className="text-sm text-muted-foreground">{tasks.length} total tasks</p>
           </div>
-          <Button size="sm" variant="outline" className="gap-1" onClick={() => setIsAddingTask((open) => !open)}>
-            <Plus className="w-3.5 h-3.5" />
-            Add Task
-          </Button>
+          <Sheet open={isTaskSheetOpen} onOpenChange={setIsTaskSheetOpen}>
+            <SheetTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1" onClick={() => openTaskSheet()}>
+                <Plus className="w-3.5 h-3.5" />
+                Add Task
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="h-[85%] bg-background rounded-t-3xl">
+              <SheetHeader>
+                <SheetTitle>{editingTask ? 'Edit Task' : 'Create Task'}</SheetTitle>
+              </SheetHeader>
+              <div className="space-y-4 mt-6 px-1">
+                <Select
+                  value={taskForm.lead_id || 'none'}
+                  onValueChange={(value) => setTaskForm((prev) => ({ ...prev, lead_id: value === 'none' ? '' : value }))}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select lead" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select lead</SelectItem>
+                    {leads.map((lead) => (
+                      <SelectItem key={lead.id} value={lead.id}>
+                        {lead.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Input
+                  placeholder="Task title"
+                  value={taskForm.title}
+                  onChange={(event) => setTaskForm((prev) => ({ ...prev, title: event.target.value }))}
+                />
+                <Textarea
+                  placeholder="Task description"
+                  rows={3}
+                  value={taskForm.message}
+                  onChange={(event) => setTaskForm((prev) => ({ ...prev, message: event.target.value }))}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    type="datetime-local"
+                    value={taskForm.due_date}
+                    onChange={(event) => setTaskForm((prev) => ({ ...prev, due_date: event.target.value }))}
+                  />
+                  <Select
+                    value={taskForm.status}
+                    onValueChange={(value) => setTaskForm((prev) => ({ ...prev, status: value as TaskStatus }))}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => void saveTask()}>
+                    {editingTask ? 'Save Changes' : 'Create Task'}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => {
+                    resetTaskForm();
+                    setIsTaskSheetOpen(false);
+                  }}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
-
-        {isAddingTask && (
-          <div className="mb-4 rounded-xl border border-border bg-card p-3 space-y-2">
-            <Select
-              value={taskForm.lead_id || 'none'}
-              onValueChange={(value) => setTaskForm((prev) => ({ ...prev, lead_id: value === 'none' ? '' : value }))}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Select lead" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Select lead</SelectItem>
-                {leads.map((lead) => (
-                  <SelectItem key={lead.id} value={lead.id}>
-                    {lead.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Input
-              placeholder="Task title"
-              value={taskForm.title}
-              onChange={(event) => setTaskForm((prev) => ({ ...prev, title: event.target.value }))}
-            />
-            <Textarea
-              placeholder="Task message"
-              rows={2}
-              value={taskForm.message}
-              onChange={(event) => setTaskForm((prev) => ({ ...prev, message: event.target.value }))}
-            />
-            <Input
-              type="datetime-local"
-              value={taskForm.due_date}
-              onChange={(event) => setTaskForm((prev) => ({ ...prev, due_date: event.target.value }))}
-            />
-            <div className="flex gap-2">
-              <Button size="sm" onClick={() => void createManualTask()}>
-                Create
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsAddingTask(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-2 mb-4">
@@ -324,7 +411,7 @@ const TasksPanel = () => {
                 </h2>
                 <div className="space-y-2">
                   {overdueTasks.map((task) => (
-                    <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
+                    <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} onEdit={openTaskSheet} />
                   ))}
                 </div>
               </div>
@@ -338,7 +425,7 @@ const TasksPanel = () => {
                 </h2>
                 <div className="space-y-2">
                   {upcomingTasks.map((task) => (
-                    <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
+                    <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} onEdit={openTaskSheet} />
                   ))}
                 </div>
               </div>
@@ -349,7 +436,7 @@ const TasksPanel = () => {
                 <h2 className="text-sm font-semibold text-muted-foreground mb-2">No Due Date ({otherTasks.length})</h2>
                 <div className="space-y-2">
                   {otherTasks.map((task) => (
-                    <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
+                    <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} onEdit={openTaskSheet} />
                   ))}
                 </div>
               </div>
@@ -363,7 +450,7 @@ const TasksPanel = () => {
                 </h2>
                 <div className="space-y-2">
                 {completedTasks.slice(0, 5).map((task) => (
-                  <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
+                  <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} onEdit={openTaskSheet} />
                   ))}
                   {completedTasks.length > 5 && (
                     <p className="text-xs text-muted-foreground text-center py-2">

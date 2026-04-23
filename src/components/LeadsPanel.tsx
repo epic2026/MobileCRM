@@ -153,9 +153,9 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
     return matchesSearch && matchesStatus;
   });
 
-  const getLeadsByStatus = (status: LeadStatus) => {
-    return filteredLeads.filter((lead) => lead.status === status);
-  };
+  const sortedLeads = filteredLeads
+    .slice()
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
   const handleStatusChange = (leadId: string, newStatus: LeadStatus) => {
     updateLead.mutate({ id: leadId, status: newStatus });
@@ -331,7 +331,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
           </div>
         ) : (
           <div className="space-y-3 pb-4">
-            {filteredLeads.map((lead) => {
+            {sortedLeads.map((lead) => {
               const initials = lead.name
                 .split(' ')
                 .map((n) => n[0])
