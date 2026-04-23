@@ -91,10 +91,21 @@ export const useLeadActivities = (leadId: string | null) => {
         .single();
 
       if (error) throw error;
+
+      // Update lead's updated_at to reflect the activity
+      const { error: updateError } = await supabase
+        .from('leads')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', activity.lead_id);
+
+      if (updateError) throw updateError;
+
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lead_activities', leadId, tenantId] });
+      // Invalidate leads query so the list re-sorts by updated_at
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
     },
     onError: (error) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });

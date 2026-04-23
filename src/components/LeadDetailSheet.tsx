@@ -15,6 +15,7 @@ import {
   Activity,
   X,
   Volume2,
+  Edit2,
 } from 'lucide-react';
 import { Lead, LeadStatus } from '@/hooks/useLeads';
 import { useLeadTasks, TaskStatus } from '@/hooks/useLeadTasks';
@@ -561,8 +562,8 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
             </TabsContent>
 
             {/* Tasks Tab */}
-            <TabsContent value="tasks" className="px-6 pb-6">
-              <div className="flex items-center justify-between mb-4">
+            <TabsContent value="tasks" className="px-6 pb-6 flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col">
+              <div className="flex items-center justify-between mb-4 flex-shrink-0">
                 <h3 className="font-semibold text-foreground">Tasks</h3>
                 <Button size="sm" variant="outline" onClick={() => setIsAddingTask(!isAddingTask)} className="gap-1">
                   <Plus className="w-3 h-3" />
@@ -576,7 +577,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="mb-4 p-4 glass-card space-y-3"
+                    className="mb-4 p-4 glass-card space-y-3 flex-shrink-0"
                   >
                     <Input
                       placeholder="Task title"
@@ -606,7 +607,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                 )}
               </AnimatePresence>
 
-              <div className="space-y-3">
+              <div className="space-y-3 flex-1 min-h-0 overflow-y-auto">
                 {tasks.length === 0 ? (
                   <p className="text-center py-8 text-muted-foreground">No tasks yet</p>
                 ) : (
@@ -619,10 +620,10 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                       className="p-3 glass-card"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-foreground">{task.title}</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{task.title}</p>
                           {task.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{task.description}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{task.description}</p>
                           )}
                           {task.due_date && (
                             <p className="text-[10px] text-muted-foreground/70 mt-1 flex items-center gap-1">
@@ -631,17 +632,29 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                             </p>
                           )}
                         </div>
-                        <Select value={task.status} onValueChange={(value: TaskStatus) => handleTaskStatusChange(task.id, value)}>
-                          <SelectTrigger className={`h-7 w-[128px] border text-[10px] ${taskStatusColors[task.status]}`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pending">Pending</SelectItem>
-                            <SelectItem value="in_progress">In Progress</SelectItem>
-                            <SelectItem value="completed">Completed</SelectItem>
-                            <SelectItem value="cancelled">Cancelled</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Select value={task.status} onValueChange={(value: TaskStatus) => handleTaskStatusChange(task.id, value)}>
+                            <SelectTrigger className={`h-7 w-[100px] border text-[10px] ${taskStatusColors[task.status]}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="in_progress">In Progress</SelectItem>
+                              <SelectItem value="completed">Completed</SelectItem>
+                              <SelectItem value="cancelled">Cancelled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTaskForm({ title: task.title, description: task.description ?? '', due_date: task.due_date ?? '', status: task.status });
+                              setIsAddingTask(true);
+                            }}
+                            className="h-7 w-7 rounded bg-secondary text-muted-foreground flex items-center justify-center flex-shrink-0 hover:bg-secondary/80"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     </motion.div>
                   ))

@@ -2161,33 +2161,6 @@ const AdminDashboard = () => {
             <p className="text-sm text-muted-foreground">{leadRows.length} leads available</p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Input
-            placeholder="Search leads"
-            value={leadSearch}
-            onChange={(e) => setLeadSearch(e.target.value)}
-          />
-          <Select value={leadStatusFilter} onValueChange={setLeadStatusFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="new">New</SelectItem>
-              <SelectItem value="contacted">Contacted</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setLeadSearch('');
-              setLeadStatusFilter('all');
-            }}
-          >
-            <Filter className="mr-2 h-4 w-4" />
-            Clear
-          </Button>
-        </div>
       </div>
       <Card className="border-border/80 shadow-sm">
         <CardContent className="pt-4">
@@ -2830,7 +2803,6 @@ const AdminDashboard = () => {
                     <TableHead>Role</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
-                    <TableHead>Tenant</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -2873,18 +2845,6 @@ const AdminDashboard = () => {
                       </TableCell>
                       <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy')}</TableCell>
                       <TableCell>
-                        <select
-                          value={entry.tenant_id || ''}
-                          onChange={(e) => void handleAssignTenant(entry.id, e.target.value)}
-                          className="rounded border px-2 py-1 text-sm"
-                        >
-                          <option value="">Unassigned</option>
-                          {tenants.map((tenant) => (
-                            <option key={tenant.id} value={tenant.id}>{tenant.name}</option>
-                          ))}
-                        </select>
-                      </TableCell>
-                      <TableCell>
                         <div className="flex justify-end gap-2">
                           <Button size="sm" variant="outline" onClick={() => handleEditUser(entry)}>
                             <Pencil className="mr-1 h-3 w-3" />
@@ -2925,7 +2885,7 @@ const AdminDashboard = () => {
                   ))}
                   {paginatedUsers.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
                         No users found.
                       </TableCell>
                     </TableRow>
