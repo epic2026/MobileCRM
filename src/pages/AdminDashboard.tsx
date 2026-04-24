@@ -125,6 +125,9 @@ import {
   Brush,
   ReferenceLine,
   Legend,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
 import { format, subDays } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
@@ -237,7 +240,7 @@ const AdminDashboard = () => {
     tasks: false,
     activities: false,
   });
-  const [callReportView, setCallReportView] = useState<'overview' | 'user' | 'logs'>('overview');
+  const [callReportView, setCallReportView] = useState<'overview' | 'user' | 'logs' | 'time' | 'hourly' | 'productivity'>('overview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [leadStatusFilter, setLeadStatusFilter] = useState<'all' | 'new' | 'contacted' | 'qualified' | 'proposal' | 'won' | 'lost'>('all');
@@ -940,6 +943,27 @@ const AdminDashboard = () => {
       byCalendar: Array.from(byCalendar.values()).sort((a, b) => a.date.localeCompare(b.date)),
     };
   }, [filteredCallLogs, leadMap, userMap]);
+
+  const hourlyDistribution = useMemo(() => {
+    const byHour = Array.from({ length: 24 }, (_, h) => ({
+      hour: h,
+      label: `${String(h).padStart(2, '0')}:00`,
+      calls: 0,
+    }));
+    callActivityReport.filtered.forEach((entry) => {
+      const h = new Date(entry.created_at).getHours();
+      byHour[h].calls += 1;
+    });
+    return byHour;
+  }, [callActivityReport.filtered]);
+
+  const durationBuckets = useMemo(() => [
+    { label: '0-1m',  count: callActivityReport.filtered.filter(e => (e.duration || 0) > 0 && (e.duration || 0) < 60).length },
+    { label: '1-3m',  count: callActivityReport.filtered.filter(e => (e.duration || 0) >= 60 && (e.duration || 0) < 180).length },
+    { label: '3-5m',  count: callActivityReport.filtered.filter(e => (e.duration || 0) >= 180 && (e.duration || 0) < 300).length },
+    { label: '5-10m', count: callActivityReport.filtered.filter(e => (e.duration || 0) >= 300 && (e.duration || 0) < 600).length },
+    { label: '10m+',  count: callActivityReport.filtered.filter(e => (e.duration || 0) >= 600).length },
+  ], [callActivityReport.filtered]);
 
   const createUser = useMutation({
     mutationFn: async (data: { email: string; password: string; fullName: string; role: 'super_admin' | 'admin' | 'sales' }) => {
@@ -1711,10 +1735,13 @@ const AdminDashboard = () => {
           ) : null}
 
           <Tabs value={callReportView} onValueChange={(value) => setCallReportView(value as typeof callReportView)}>
-            <TabsList>
+            <TabsList className="flex-wrap h-auto gap-1">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="user">User Performance</TabsTrigger>
               <TabsTrigger value="logs">Call Logs</TabsTrigger>
+              <TabsTrigger value="time">Time Analytics</TabsTrigger>
+              <TabsTrigger value="hourly">Hourly Pattern</TabsTrigger>
+              <TabsTrigger value="productivity">Agent Productivity</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview">
@@ -1909,6 +1936,281 @@ const AdminDashboard = () => {
                 </div>
               </CardContent>
             </Card>
+            </TabsContent>
+
+            {/* ── TIME ANALYTICS ── */}
+            <TabsContent value="time">
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card className="border-border/70">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <TrendingUp className="h-4 w-4 text-primary" />
+                      Call Volume Trends (Daily)
+                    </CardTitle>
+                    <CardDescription>Total calls vs connected calls over time.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {callActivityReport.byCalendar.length === 0 ? (
+                      <p className="py-8 text-center text-sm text-muted-foreground">No data in selected range.</p>
+                    ) : (
+                      <>
+                        <ResponsiveContainer width="100%" height={220}>
+                          <AreaChart data={callActivityReport.byCalendar} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                              </linearGradient>
+                              <linearGradient id="gradConnected" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#22c55e" stopOpacity={0.25} />
+                                <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="date" tickFormatter={(d) => format(new Date(d), 'dd MMM')} tick={{ fontSize: 11 }} />
+                            <YAxis tick={{ fontSize: 11 }} />
+                            <RechartsTooltip formatter={(val, name) => [val, name === 'totalCalls' ? 'Total Calls' : 'Connected']} labelFormatter={(d) => format(new Date(d), 'dd MMM yyyy')} />
+                            <Legend formatter={(val) => val === 'totalCalls' ? 'Total Calls' : 'Connected'} />
+                            <Area type="monotone" dataKey="totalCalls" stroke="#6366f1" strokeWidth={2} fill="url(#gradTotal)" dot={{ r: 3 }} />
+                            <Area type="monotone" dataKey="connectedCalls" stroke="#22c55e" strokeWidth={2} fill="url(#gradConnected)" dot={{ r: 3 }} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <div className="rounded-lg bg-indigo-50 p-3 text-center">
+                            <p className="text-xs text-muted-foreground">Peak Day</p>
+                            <p className="mt-1 text-sm font-bold text-indigo-600">
+                              {callActivityReport.byCalendar.length > 0
+                                ? format(new Date([...callActivityReport.byCalendar].sort((a, b) => b.totalCalls - a.totalCalls)[0].date), 'dd MMM')
+                                : '—'}
+                            </p>
+                            <p className="text-xs text-indigo-500">
+                              ({[...callActivityReport.byCalendar].sort((a, b) => b.totalCalls - a.totalCalls)[0]?.totalCalls ?? 0} calls)
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-green-50 p-3 text-center">
+                            <p className="text-xs text-muted-foreground">Avg Daily Calls</p>
+                            <p className="mt-1 text-sm font-bold text-green-600">
+                              {callActivityReport.byCalendar.length > 0
+                                ? Math.round(callActivityReport.totals.totalCalls / callActivityReport.byCalendar.length)
+                                : 0}
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/70">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Activity className="h-4 w-4 text-primary" />
+                      Call Duration Distribution
+                    </CardTitle>
+                    <CardDescription>Connected calls grouped by talk time length.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={durationBuckets} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                        <RechartsTooltip formatter={(val) => [val, 'Calls']} />
+                        <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                          {durationBuckets.map((_, i) => (
+                            <Cell key={i} fill={['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6'][i]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      {durationBuckets.map((b, i) => (
+                        <div key={b.label} className="rounded-lg border p-2 text-center">
+                          <p className="text-xs text-muted-foreground">{b.label}</p>
+                          <p className="mt-0.5 font-bold" style={{ color: ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6'][i] }}>{b.count}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            {/* ── HOURLY PATTERN ── */}
+            <TabsContent value="hourly">
+              <Card className="border-border/70">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Activity className="h-4 w-4 text-primary" />
+                    Hourly Call Distribution (24-Hour Pattern)
+                  </CardTitle>
+                  <CardDescription>Call volume by hour of day across the selected period.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {callActivityReport.filtered.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-muted-foreground">No data in selected range.</p>
+                  ) : (
+                    <>
+                      <ResponsiveContainer width="100%" height={240}>
+                        <AreaChart data={hourlyDistribution} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="gradHourly" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={1} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                          <RechartsTooltip formatter={(val) => [val, 'Calls']} />
+                          <Area type="monotone" dataKey="calls" stroke="#06b6d4" strokeWidth={2} fill="url(#gradHourly)" dot={{ r: 3, fill: '#06b6d4' }} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                      {(() => {
+                        const peak = [...hourlyDistribution].sort((a, b) => b.calls - a.calls)[0];
+                        const activeHours = hourlyDistribution.filter(h => h.calls > 0);
+                        const totalCalls = hourlyDistribution.reduce((s, h) => s + h.calls, 0);
+                        const avgPerHour = activeHours.length > 0 ? Math.round(totalCalls / activeHours.length) : 0;
+                        const morningCalls = hourlyDistribution.slice(6, 12).reduce((s, h) => s + h.calls, 0);
+                        const afternoonCalls = hourlyDistribution.slice(12, 18).reduce((s, h) => s + h.calls, 0);
+                        const eveningCalls = hourlyDistribution.slice(18, 24).reduce((s, h) => s + h.calls, 0);
+                        const nightCalls = hourlyDistribution.slice(0, 6).reduce((s, h) => s + h.calls, 0);
+                        const periods = [['Morning', morningCalls], ['Afternoon', afternoonCalls], ['Evening', eveningCalls], ['Night', nightCalls]] as const;
+                        const mostActive = [...periods].sort((a, b) => (b[1] as number) - (a[1] as number))[0][0];
+                        return (
+                          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div className="rounded-lg bg-cyan-50 p-3 text-center">
+                              <p className="text-xs text-muted-foreground">Peak Hour</p>
+                              <p className="mt-1 text-sm font-bold text-cyan-700">{peak.label}</p>
+                              <p className="text-xs text-cyan-500">({peak.calls} calls)</p>
+                            </div>
+                            <div className="rounded-lg bg-indigo-50 p-3 text-center">
+                              <p className="text-xs text-muted-foreground">Avg Per Hour</p>
+                              <p className="mt-1 text-sm font-bold text-indigo-600">{avgPerHour} calls</p>
+                            </div>
+                            <div className="rounded-lg bg-green-50 p-3 text-center">
+                              <p className="text-xs text-muted-foreground">Most Active Period</p>
+                              <p className="mt-1 text-sm font-bold text-green-600">{mostActive}</p>
+                            </div>
+                            <div className="rounded-lg bg-violet-50 p-3 text-center">
+                              <p className="text-xs text-muted-foreground">Total Hours Active</p>
+                              <p className="mt-1 text-sm font-bold text-violet-600">{activeHours.length}/24</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* ── AGENT PRODUCTIVITY ── */}
+            <TabsContent value="productivity">
+              <div className="space-y-4">
+                {/* Stat cards */}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {[
+                    { label: 'TOTAL CALLS', value: callActivityReport.totals.totalCalls.toString(), sub: '100% of activity', color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                    { label: 'CONNECTED', value: callActivityReport.totals.totalConnectedCalls.toString(), sub: `${callActivityReport.totals.answerRate}% success rate`, color: 'text-green-600', bg: 'bg-green-50' },
+                    { label: 'TOTAL TALK TIME', value: formatCallDuration(callActivityReport.totals.totalDurationSeconds), sub: 'Combined duration', color: 'text-cyan-600', bg: 'bg-cyan-50' },
+                    { label: 'AVG DURATION', value: formatCallDuration(callActivityReport.totals.totalConnectedCalls > 0 ? Math.round(callActivityReport.totals.totalDurationSeconds / callActivityReport.totals.totalConnectedCalls) : 0), sub: 'Per connected call', color: 'text-violet-600', bg: 'bg-violet-50' },
+                  ].map((s) => (
+                    <Card key={s.label} className={`border-border/60 ${s.bg}`}>
+                      <CardContent className="p-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{s.label}</p>
+                        <p className={`mt-2 text-xl font-bold ${s.color}`}>{s.value}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{s.sub}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {/* Agent call distribution horizontal bar */}
+                  <Card className="border-border/70">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <User className="h-4 w-4 text-primary" />
+                        Agent Call Distribution (Top 10)
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {callActivityReport.byUser.length === 0 ? (
+                        <p className="py-8 text-center text-sm text-muted-foreground">No agent data.</p>
+                      ) : (
+                        <ResponsiveContainer width="100%" height={Math.max(180, Math.min(callActivityReport.byUser.slice(0, 10).length * 40, 400))}>
+                          <BarChart
+                            layout="vertical"
+                            data={callActivityReport.byUser.slice(0, 10)}
+                            margin={{ top: 4, right: 24, left: 8, bottom: 0 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                            <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                            <YAxis type="category" dataKey="user" tick={{ fontSize: 11 }} width={110} />
+                            <RechartsTooltip formatter={(val) => [val, 'Calls']} />
+                            <Bar dataKey="totalCalls" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Call type donut */}
+                  <Card className="border-border/70">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Activity className="h-4 w-4 text-primary" />
+                        Call Type Breakdown
+                      </CardTitle>
+                      <CardDescription>Outbound vs inbound vs missed distribution.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col items-center">
+                      {callActivityReport.totals.totalCalls === 0 ? (
+                        <p className="py-8 text-center text-sm text-muted-foreground">No data in selected range.</p>
+                      ) : (
+                        <>
+                          <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                              <Pie
+                                data={[
+                                  { name: 'Outbound', value: callActivityReport.totals.totalOutboundCalls },
+                                  { name: 'Inbound', value: callActivityReport.totals.totalInboundCalls },
+                                  { name: 'Missed', value: callActivityReport.totals.totalMissedCalls },
+                                ].filter(d => d.value > 0)}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={55}
+                                outerRadius={85}
+                                paddingAngle={3}
+                                dataKey="value"
+                              >
+                                {['#6366f1', '#22c55e', '#ef4444'].map((color, i) => (
+                                  <Cell key={i} fill={color} />
+                                ))}
+                              </Pie>
+                              <RechartsTooltip formatter={(val, name) => [val, name]} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                          <div className="mt-2 flex flex-wrap justify-center gap-4 text-sm">
+                            {[
+                              { label: 'Outbound', val: callActivityReport.totals.totalOutboundCalls, color: '#6366f1' },
+                              { label: 'Inbound', val: callActivityReport.totals.totalInboundCalls, color: '#22c55e' },
+                              { label: 'Missed', val: callActivityReport.totals.totalMissedCalls, color: '#ef4444' },
+                            ].map((item) => (
+                              <div key={item.label} className="flex items-center gap-1.5">
+                                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: item.color }} />
+                                <span className="text-muted-foreground">{item.label}</span>
+                                <span className="font-semibold">{item.val}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
             </TabsContent>
           </Tabs>
         </CardContent>
