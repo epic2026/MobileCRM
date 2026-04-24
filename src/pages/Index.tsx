@@ -1,4 +1,5 @@
 import { startTransition, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallLogs } from '@/hooks/useCallLogs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,6 +29,7 @@ const Index = () => {
   };
   const { createCallLog } = useCallLogs({ fetchLogs: false, realtime: false });
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   // Format phone for India
   const formatPhone = (phone: string): string => {
@@ -42,10 +44,10 @@ const Index = () => {
     return formattedPhone;
   };
 
-  // Create activity in database
+  // Create activity in database and bump lead's updated_at so it sorts to top
   const createActivity = async (leadId: string, type: string, title: string, description?: string) => {
     if (!user) return;
-    
+
     try {
       await supabase.from('lead_activities').insert({
         lead_id: leadId,
@@ -55,6 +57,8 @@ const Index = () => {
         metadata: {},
         user_id: user.id,
       });
+      await supabase.from('leads').update({ updated_at: new Date().toISOString() }).eq('id', leadId);
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
     } catch (error) {
       console.error('Failed to create activity:', error);
     }
