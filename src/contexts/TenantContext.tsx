@@ -273,14 +273,21 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
   }, [isSuperAdmin, refreshTenants]);
 
   const assignUserToTenant = useCallback(async (tenantId: string, userId: string) => {
-    if (!isSuperAdmin) throw new Error('Only super admins can assign tenant users');
-
-    const { error } = await supabase.rpc('admin_assign_user_to_tenant', {
-      p_user_id: userId,
-      p_tenant_id: tenantId,
-    });
-
-    if (error) throw error;
+    if (isSuperAdmin) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.rpc as any)('admin_assign_user_to_tenant', {
+        p_user_id: userId,
+        p_tenant_id: tenantId,
+      });
+      if (error) throw error;
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.rpc as any)('tenant_admin_add_member', {
+        p_tenant_id: tenantId,
+        p_user_id: userId,
+      });
+      if (error) throw error;
+    }
     await refreshTenants();
   }, [isSuperAdmin, refreshTenants]);
 
@@ -318,9 +325,19 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
     await refreshTenants();
   }, [isSuperAdmin, refreshTenants]);
 
-  const removeMember = useCallback(async (_tenantId: string, userId: string) => {
-    await clearUserTenant(userId);
-  }, [clearUserTenant]);
+  const removeMember = useCallback(async (tenantId: string, userId: string) => {
+    if (isSuperAdmin) {
+      await clearUserTenant(userId);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.rpc as any)('tenant_admin_remove_member', {
+        p_tenant_id: tenantId,
+        p_user_id: userId,
+      });
+      if (error) throw error;
+      await refreshTenants();
+    }
+  }, [clearUserTenant, isSuperAdmin, refreshTenants]);
 
   const updateMemberRole = useCallback(async (tenantId: string, userId: string, nextRole: TenantRole) => {
     if (nextRole === 'admin') {

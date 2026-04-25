@@ -325,23 +325,50 @@ const AdminDashboard = () => {
   }, []);
 
   const { data: users = [], isLoading: usersLoading } = useQuery({
-    queryKey: ['admin-users'],
+    queryKey: ['admin-users', isSuperAdmin ? null : currentTenant?.id],
     queryFn: async () => {
+      if (!isSuperAdmin && currentTenant) {
+        const { data: members, error: membersError } = await supabase
+          .from('tenant_members')
+          .select('user_id')
+          .eq('tenant_id', currentTenant.id);
+        if (membersError) throw membersError;
+
+        const memberIds = (members || []).map((m) => m.user_id);
+        if (memberIds.length === 0) return [] as UserWithRole[];
+
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', memberIds)
+          .order('created_at', { ascending: false });
+        if (profilesError) throw profilesError;
+
+        const { data: roles, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('user_id, role')
+          .in('user_id', memberIds);
+        if (rolesError) throw rolesError;
+
+        const rolesMap = new Map(roles?.map((item) => [item.user_id, item.role]) || []);
+        return (profiles || []).map((profile) => ({
+          ...profile,
+          role: rolesMap.get(profile.id) || null,
+        })) as UserWithRole[];
+      }
+
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
-
       if (profilesError) throw profilesError;
 
       const { data: roles, error: rolesError } = await supabase
         .from('user_roles')
         .select('user_id, role');
-
       if (rolesError) throw rolesError;
 
       const rolesMap = new Map(roles?.map((item) => [item.user_id, item.role]) || []);
-
       return (profiles || []).map((profile) => ({
         ...profile,
         role: rolesMap.get(profile.id) || null,
@@ -984,6 +1011,16 @@ const AdminDashboard = () => {
       });
 
       if (roleError) throw roleError;
+
+      if (currentTenant && data.role !== 'super_admin') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: memberError } = await (supabase.rpc as any)('tenant_admin_add_member', {
+          p_tenant_id: currentTenant.id,
+          p_user_id: authData.user.id,
+        });
+        if (memberError) throw memberError;
+      }
+
       return authData.user;
     },
     onSuccess: () => {
@@ -2773,26 +2810,11 @@ const AdminDashboard = () => {
           </CardContent>
         </Card>
       ) : null}
+      {renderTeam()}
     </div>
   );
 
   const renderTeam = () => {
-    if (!isSuperAdmin) {
-      return (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600" />
-              <div>
-                <p className="font-medium text-amber-900">Super admin only</p>
-                <p className="text-sm text-amber-700">Tenant users can only be managed by super admins.</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      );
-    }
-
     if (!currentTenant) {
       return (
         <Card className="border-amber-200 bg-amber-50">
@@ -2811,8 +2833,8 @@ const AdminDashboard = () => {
 
     return (
       <div className="space-y-4">
-        {/* Add Existing User */}
-        <Card className="border-border/80 shadow-sm">
+        {/* Add Existing User — super admins only; tenant admins create users via Add User button */}
+        {isSuperAdmin && <Card className="border-border/80 shadow-sm">
           <CardContent className="space-y-4 pt-6">
             <div className="grid gap-4">
               <div className="space-y-2">
@@ -2866,7 +2888,7 @@ const AdminDashboard = () => {
               {isAssigningTenantUser ? 'Assigning...' : 'Add User To Tenant'}
             </Button>
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Team Members */}
         <Card className="border-border/80 shadow-sm">
@@ -2915,7 +2937,7 @@ const AdminDashboard = () => {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                {member.role !== 'admin' && (
+                                {isSuperAdmin && member.role !== 'admin' && (
                                   <DropdownMenuItem
                                     onClick={async () => {
                                       try {
@@ -3221,6 +3243,7 @@ const AdminDashboard = () => {
             </div>
           </CardContent>
         </Card>
+      {!isSuperAdmin && renderTeam()}
     </div>
   );
 
