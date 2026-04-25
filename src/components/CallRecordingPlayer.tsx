@@ -4,13 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Pause, Clock, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTenant } from '@/contexts/TenantContext';
 import { useToast } from '@/hooks/use-toast';
 import { CallRecording, useCallRecordings } from '@/hooks/useCallRecordings';
 import { supabase } from '@/integrations/supabase/client';
 
 interface CallRecordingPlayerProps {
   recording: CallRecording;
-  compact?: boolean;
 }
 
 const formatDuration = (seconds: number) => {
@@ -33,9 +33,10 @@ const shouldAutoCreateTask = (actions: (string | { action: string; priority?: st
   });
 };
 
-const CallRecordingPlayer = ({ recording, compact = false }: CallRecordingPlayerProps) => {
+const CallRecordingPlayer = ({ recording }: CallRecordingPlayerProps) => {
   const { analyzeRecording } = useCallRecordings();
   const { user } = useAuth();
+  const { currentTenant } = useTenant();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isPlaying, setIsPlaying] = useState(false);
@@ -81,6 +82,7 @@ const CallRecordingPlayer = ({ recording, compact = false }: CallRecordingPlayer
 
         const { error } = await supabase.from('lead_tasks').insert({
           lead_id: recording.lead_id,
+          tenant_id: currentTenant?.id ?? recording.tenant_id,
           title: normalizedActions[0]?.slice(0, 80) || 'Follow up after call',
           description,
           due_date: null,
@@ -108,13 +110,13 @@ const CallRecordingPlayer = ({ recording, compact = false }: CallRecordingPlayer
 
   useEffect(() => {
     const loadAudioUrl = async () => {
-      if (recording.file_path && !audioUrl) {
+      if (recording.id && !audioUrl) {
         setIsLoadingUrl(true);
-        const { data, error } = await supabase.storage
-          .from('call-recordings')
-          .createSignedUrl(recording.file_path, 3600);
+        const { data, error } = await supabase.functions.invoke('get-recording-url', {
+          body: { recording_id: recording.id },
+        });
 
-        if (error) {
+        if (error || !data?.signedUrl) {
           console.error('CallRecordingPlayer signed URL error:', error);
           setAudioUrl(null);
         } else {
@@ -124,7 +126,7 @@ const CallRecordingPlayer = ({ recording, compact = false }: CallRecordingPlayer
       }
     };
     loadAudioUrl();
-  }, [recording.file_path, audioUrl]);
+  }, [recording.id, audioUrl]);
 
   useEffect(() => {
     const audio = audioRef.current;

@@ -1,8 +1,5 @@
 import { startTransition, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useCallLogs } from '@/hooks/useCallLogs';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
 import MobileLayout from '@/components/MobileLayout';
 import BottomNav from '@/components/BottomNav';
 import LeadsPanel from '@/components/LeadsPanel';
@@ -28,8 +25,6 @@ const Index = () => {
     });
   };
   const { createCallLog } = useCallLogs({ fetchLogs: false, realtime: false });
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
 
   // Format phone for India
   const formatPhone = (phone: string): string => {
@@ -44,30 +39,9 @@ const Index = () => {
     return formattedPhone;
   };
 
-  // Create activity in database and bump lead's updated_at so it sorts to top
-  const createActivity = async (leadId: string, type: string, title: string, description?: string) => {
-    if (!user) return;
-
-    try {
-      await supabase.from('lead_activities').insert({
-        lead_id: leadId,
-        type,
-        title,
-        description: description || null,
-        metadata: {},
-        user_id: user.id,
-      });
-      await supabase.from('leads').update({ updated_at: new Date().toISOString() }).eq('id', leadId);
-      queryClient.invalidateQueries({ queryKey: ['leads'] });
-    } catch (error) {
-      console.error('Failed to create activity:', error);
-    }
-  };
-
   const handleCall = (phone: string, name?: string, leadId?: string) => {
     const formattedPhone = formatPhone(phone);
-    
-    // Log the call to database
+
     createCallLog.mutate({
       phone: formattedPhone,
       contact_name: name || null,
@@ -78,36 +52,23 @@ const Index = () => {
       outcome: null,
     });
 
-    // Create activity if leadId provided
-    if (leadId) {
-      createActivity(leadId, 'call', `Outgoing call to ${name || formattedPhone}`, `Called ${formattedPhone}`);
-    }
-
     toast({
       title: 'Opening Phone',
       description: `Calling ${name || formattedPhone}`,
     });
-    
-    // Open native phone dialer with tel: protocol
+
     window.location.href = `tel:${formattedPhone}`;
   };
 
-  const handleWhatsApp = (phone: string, name?: string, leadId?: string) => {
+  const handleWhatsApp = (phone: string, name?: string) => {
     const formattedPhone = formatPhone(phone);
-    // Remove + for WhatsApp URL
     const waNumber = formattedPhone.replace('+', '');
-    
-    // Create activity if leadId provided
-    if (leadId) {
-      createActivity(leadId, 'message', `WhatsApp chat with ${name || formattedPhone}`, `Opened WhatsApp chat with ${waNumber}`);
-    }
 
     toast({
       title: 'Opening WhatsApp',
       description: `Chatting with ${name || formattedPhone}`,
     });
-    
-    // Open WhatsApp with phone number
+
     window.location.href = `https://wa.me/${waNumber}`;
   };
 

@@ -309,7 +309,7 @@ const CallActivity = ({ onCall }: CallActivityProps) => {
                       <Badge variant="secondary" className="text-[10px]">AI Ready</Badge>
                     </div>
                     <div onClick={(event) => event.stopPropagation()}>
-                      <CallRecordingPlayer recording={recordingsByCallLogId.get(log.id)!} compact />
+                      <CallRecordingPlayer recording={recordingsByCallLogId.get(log.id)!} />
                     </div>
                   </div>
                 )}

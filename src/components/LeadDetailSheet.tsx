@@ -552,7 +552,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                               {recordingSourceLabel(recordingsByActivityId.get(activity.id)!)}
                             </Badge>
                           </div>
-                          <CallRecordingPlayer recording={recordingsByActivityId.get(activity.id)!} compact />
+                          <CallRecordingPlayer recording={recordingsByActivityId.get(activity.id)!} />
                         </div>
                       )}
                     </div>
@@ -647,7 +647,7 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                           <button
                             type="button"
                             onClick={() => {
-                              setTaskForm({ title: task.title, description: task.description ?? '', due_date: task.due_date ?? '', status: task.status });
+                              setTaskForm({ title: task.title, description: task.description ?? '', due_date: task.due_date ?? '' });
                               setIsAddingTask(true);
                             }}
                             className="h-7 w-7 rounded bg-secondary text-muted-foreground flex items-center justify-center flex-shrink-0 hover:bg-secondary/80"

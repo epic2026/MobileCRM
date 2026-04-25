@@ -72,7 +72,7 @@ export const useLeadActivities = (leadId: string | null) => {
   }, [leadId, queryClient, tenantId]);
 
   const createActivity = useMutation({
-    mutationFn: async (activity: Omit<LeadActivity, 'id' | 'created_at' | 'user_id'>) => {
+    mutationFn: async (activity: Omit<LeadActivity, 'id' | 'created_at' | 'user_id' | 'tenant_id'>) => {
       if (!user) throw new Error('Not authenticated');
       if (!tenantId) throw new Error('No tenant selected');
 
