@@ -269,8 +269,6 @@ const AdminDashboard = () => {
   const [lastUpdatedAt, setLastUpdatedAt] = useState(format(new Date(), 'PPP p'));
 
   // Tenant management state
-  const [selectedTenantUserId, setSelectedTenantUserId] = useState('');
-  const [isAssigningTenantUser, setIsAssigningTenantUser] = useState(false);
   const [tenantNameEdit, setTenantNameEdit] = useState(currentTenant?.name || '');
   const [isEditingTenant, setIsEditingTenant] = useState(false);
   const [newTenantName, setNewTenantName] = useState('');
@@ -539,16 +537,6 @@ const AdminDashboard = () => {
   const currentTenantManager = useMemo(
     () => tenantMembers.find((member) => member.role === 'admin') || null,
     [tenantMembers],
-  );
-
-  const availableTenantUsers = useMemo(
-    () => users.filter((entry) =>
-      entry.is_active
-      && entry.role !== 'super_admin'
-      && !currentTenantMemberIds.has(entry.id)
-      && !entry.tenant_id,
-    ),
-    [currentTenantMemberIds, users],
   );
 
   const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -2818,63 +2806,6 @@ const AdminDashboard = () => {
 
     return (
       <div className="space-y-4">
-        {/* Add Existing User — super admins only; tenant admins create users via Add User button */}
-        {isSuperAdmin && <Card className="border-border/80 shadow-sm">
-          <CardContent className="space-y-4 pt-6">
-            <div className="grid gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="tenant-user-select">Add Existing User</Label>
-                <Select value={selectedTenantUserId} onValueChange={setSelectedTenantUserId}>
-                  <SelectTrigger id="tenant-user-select">
-                    <SelectValue placeholder="Select an unassigned user" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableTenantUsers.length === 0 && (
-                      <SelectItem value="no-tenant-users" disabled>No unassigned users available</SelectItem>
-                    )}
-                    {availableTenantUsers.map((entry) => (
-                      <SelectItem key={entry.id} value={entry.id}>
-                        {entry.full_name || entry.email} ({entry.role || 'No role'})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <Button
-              onClick={async () => {
-                if (!selectedTenantUserId) {
-                  toast({ title: 'Error', description: 'Select a user to assign to this tenant.' });
-                  return;
-                }
-                try {
-                  setIsAssigningTenantUser(true);
-                  await assignUserToTenant(currentTenant.id, selectedTenantUserId);
-                  toast({
-                    title: 'User assigned',
-                    description: 'User has been linked to this tenant.',
-                  });
-                  setSelectedTenantUserId('');
-                } catch (error: any) {
-                  toast({
-                    title: 'Error',
-                    description: error.message || 'Failed to assign tenant user',
-                    variant: 'destructive',
-                  });
-                } finally {
-                  setIsAssigningTenantUser(false);
-                }
-              }}
-              disabled={isAssigningTenantUser || !selectedTenantUserId}
-              className="w-full"
-            >
-              <Mail className="mr-2 h-4 w-4" />
-              {isAssigningTenantUser ? 'Assigning...' : 'Add User To Tenant'}
-            </Button>
-          </CardContent>
-        </Card>}
-
         {/* Team Members */}
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="border-b bg-muted/20">
@@ -2968,21 +2899,6 @@ const AdminDashboard = () => {
         </Card>
       </div>
     );
-  };
-
-  const handleAssignTenant = async (userId: string, tenantId: string) => {
-    try {
-      if (tenantId) {
-        await assignUserToTenant(tenantId, userId);
-        toast({ title: 'Tenant assigned', description: 'User has been assigned to the selected tenant.' });
-      } else {
-        await clearUserTenant(userId);
-        toast({ title: 'Tenant cleared', description: 'User is no longer assigned to a tenant.' });
-      }
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-    } catch (error: any) {
-      toast({ title: 'Failed to update tenant', description: error.message || 'Unable to update tenant assignment.', variant: 'destructive' });
-    }
   };
 
   const renderSettings = () => (
