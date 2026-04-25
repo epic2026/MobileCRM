@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { CallRecordingPlugin } from '@/services/nativePlugins';
 
 export type MatchConfidence = 'high' | 'medium' | 'low';
+export type CallDirection = 'incoming' | 'outgoing';
 
 export interface ImportedSystemRecording {
   contentUri: string;
@@ -17,7 +18,18 @@ export interface ImportedSystemRecording {
   matchedLeadId: string | null;
   matchedPhone: string | null;
   confidence: MatchConfidence;
+  direction: CallDirection;
 }
+
+// Most Android call recorder apps embed direction in the filename or folder path.
+// Patterns checked (case-insensitive): "incoming", "outgoing", "inbound", "outbound",
+// "received", "in_", "_in_", "out_", "_out_", "from" (caller rang us).
+const detectCallDirection = (fileName: string, relativePath: string): CallDirection => {
+  const text = `${fileName} ${relativePath}`.toLowerCase();
+  if (/incoming|inbound|received|_in[_.\s]|[\s_]in[_.\s]|call.?from/.test(text)) return 'incoming';
+  if (/outgoing|outbound|dialed|_out[_.\s]|[\s_]out[_.\s]/.test(text)) return 'outgoing';
+  return 'outgoing'; // safe default — outbound calls are initiated from the app
+};
 
 interface CallLogMatch {
   id: string;
@@ -220,6 +232,7 @@ export const performSystemRecordingScan = async ({
       matchedLeadId,
       matchedPhone,
       confidence,
+      direction: detectCallDirection(recording.fileName || '', recording.relativePath || ''),
     } as ImportedSystemRecording;
   });
 
@@ -284,7 +297,7 @@ export const importSystemRecording = async ({
         tenant_id: tenantId,
         phone: recording.detectedPhone || recording.matchedPhone || 'Unknown',
         duration: recording.duration || 0,
-        type: 'outgoing',
+        type: recording.direction,
         lead_id: leadId,
         user_id: userId,
         contact_name: null,
