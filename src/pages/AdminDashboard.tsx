@@ -994,34 +994,19 @@ const AdminDashboard = () => {
 
   const createUser = useMutation({
     mutationFn: async (data: { email: string; password: string; fullName: string; role: 'super_admin' | 'admin' | 'sales' }) => {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          data: { full_name: data.fullName },
+      // Use Edge Function with service-role key so the caller's browser session is never swapped
+      const { data: result, error } = await supabase.functions.invoke('create_user', {
+        body: {
+          email: data.email,
+          password: data.password,
+          fullName: data.fullName,
+          role: data.role,
+          tenantId: (currentTenant && data.role !== 'super_admin') ? currentTenant.id : undefined,
         },
       });
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Failed to create user');
-
-      const { error: roleError } = await supabase.from('user_roles').insert({
-        user_id: authData.user.id,
-        role: data.role,
-      });
-
-      if (roleError) throw roleError;
-
-      if (currentTenant && data.role !== 'super_admin') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: memberError } = await (supabase.rpc as any)('tenant_admin_add_member', {
-          p_tenant_id: currentTenant.id,
-          p_user_id: authData.user.id,
-        });
-        if (memberError) throw memberError;
-      }
-
-      return authData.user;
+      if (error) throw new Error(error.message || 'Failed to create user');
+      if (result?.error) throw new Error(typeof result.error === 'string' ? result.error : 'Failed to create user');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
