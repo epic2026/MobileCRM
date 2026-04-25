@@ -58,7 +58,11 @@ const statusColors: Record<LeadStatus, string> = {
   lost: 'bg-red-500/20 text-red-600',
 };
 
-const LeadAssignment = () => {
+interface LeadAssignmentProps {
+  onLeadClick?: (lead: Lead) => void;
+}
+
+const LeadAssignment = ({ onLeadClick }: LeadAssignmentProps) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { currentTenant } = useTenant();
@@ -321,8 +325,12 @@ const LeadAssignment = () => {
                 filteredLeads.map((lead) => {
                   const assignedUser = lead.user_id ? userMap.get(lead.user_id) : null;
                   return (
-                    <TableRow key={lead.id}>
-                      <TableCell>
+                    <TableRow
+                      key={lead.id}
+                      className={onLeadClick ? 'cursor-pointer hover:bg-muted/50' : ''}
+                      onClick={() => onLeadClick?.(lead)}
+                    >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={selectedLeads.includes(lead.id)}
                           onCheckedChange={() => toggleSelectLead(lead.id)}

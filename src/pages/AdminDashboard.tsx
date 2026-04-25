@@ -132,6 +132,8 @@ import {
 import { format, subDays } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
+import LeadDetailSheet from '@/components/LeadDetailSheet';
+import type { Lead as LeadHookType, LeadStatus as LeadStatusHookType } from '@/hooks/useLeads';
 import type { Database } from '@/integrations/supabase/types';
 
 type AdminSection = 'overview' | 'leads' | 'call-activity' | 'marketplace' | 'activity' | 'tenants' | 'settings';
@@ -250,7 +252,7 @@ const AdminDashboard = () => {
   const [activityUserFilter, setActivityUserFilter] = useState<'all' | 'system' | string>('all');
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  const [leadDetailId, setLeadDetailId] = useState<string | null>(null);
+  const [selectedAdminLead, setSelectedAdminLead] = useState<Lead | null>(null);
   const [syncLogs, setSyncLogs] = useState<SyncLogItem[]>([]);
   const [usersPage, setUsersPage] = useState(1);
   const usersPageSize = 10;
@@ -776,11 +778,6 @@ const AdminDashboard = () => {
   const selectedLeadRows = useMemo(
     () => leadRows.filter((lead) => selectedLeadIds.includes(lead.id)),
     [leadRows, selectedLeadIds],
-  );
-
-  const leadDetail = useMemo(
-    () => leads.find((entry) => entry.id === leadDetailId) || null,
-    [leadDetailId, leads],
   );
 
   const paginatedUsers = useMemo(() => {
@@ -2476,39 +2473,22 @@ const AdminDashboard = () => {
       </div>
       <Card className="border-border/80 shadow-sm">
         <CardContent className="pt-4">
-          <LeadAssignment />
+          <LeadAssignment onLeadClick={(lead) => setSelectedAdminLead(lead)} />
         </CardContent>
       </Card>
 
-      <Sheet open={!!leadDetailId} onOpenChange={(open) => !open && setLeadDetailId(null)}>
-        <SheetContent side="right" className="sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle>{leadDetail?.name || 'Lead Details'}</SheetTitle>
-            <SheetDescription>Quick detail panel for rapid lead actions.</SheetDescription>
-          </SheetHeader>
-          {leadDetail ? (
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Contact</p>
-                <p className="font-medium">{leadDetail.phone}</p>
-                {leadDetail.email && <p className="text-muted-foreground">{leadDetail.email}</p>}
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Company</p>
-                <p className="font-medium">{leadDetail.company || '-'}</p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
-                <Badge>{leadDetail.status}</Badge>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Notes</p>
-                <p className="whitespace-pre-wrap text-muted-foreground">{leadDetail.notes || 'No notes available.'}</p>
-              </div>
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+      <LeadDetailSheet
+        lead={selectedAdminLead as unknown as LeadHookType}
+        isOpen={!!selectedAdminLead}
+        onClose={() => setSelectedAdminLead(null)}
+        onCall={(phone) => { window.open(`tel:${phone}`); }}
+        onWhatsApp={(phone) => { window.open(`https://wa.me/${phone.replace(/\D/g, '')}`); }}
+        onStatusChange={async (leadId, newStatus) => {
+          await supabase.from('leads').update({ status: newStatus as LeadStatusHookType }).eq('id', leadId);
+          queryClient.invalidateQueries({ queryKey: ['admin-leads', currentTenant?.id] });
+          setSelectedAdminLead((prev) => prev ? { ...prev, status: newStatus as LeadStatusHookType } : prev);
+        }}
+      />
     </div>
   );
 
