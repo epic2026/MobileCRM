@@ -75,6 +75,7 @@ const CallRecordingPlayer = ({ recording }: CallRecordingPlayerProps) => {
           .from('lead_tasks')
           .select('id')
           .eq('lead_id', recording.lead_id)
+          .eq('tenant_id', currentTenant?.id ?? '')
           .ilike('description', `%${recording.id}%`)
           .limit(1);
 

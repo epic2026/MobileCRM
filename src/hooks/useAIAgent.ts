@@ -377,7 +377,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
               ? ((safeParams as { note: string }).note)
               : description ?? title ?? 'Note added by ARIA';
 
-            const { data: leadData } = await supabase.from('leads').select('notes').eq('id', lead_id).single();
+            const { data: leadData } = await supabase.from('leads').select('notes').eq('id', lead_id).eq('tenant_id', tenantId).single();
             const existingNotes = typeof leadData?.notes === 'string' ? leadData.notes.trim() : '';
             const nextNotes = existingNotes ? `${existingNotes}\n${noteText}` : noteText;
 
