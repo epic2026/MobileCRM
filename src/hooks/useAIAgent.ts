@@ -308,18 +308,19 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
             notes?: string;
             source?: string;
           };
-          await supabase.from('leads').insert({
+          const { error: insertError } = await supabase.from('leads').insert({
             name,
             phone,
             email: email ?? null,
             company: company ?? null,
-            status: (status ?? 'new') as 'new',
+            status: (status ?? 'new') as LeadStatus,
             value: value ?? null,
             notes: notes ?? null,
             source: source ?? null,
             user_id: user.id,
             tenant_id: tenantId,
           });
+          if (insertError) throw new Error(`Could not create lead: ${insertError.message}`);
           queryClient.invalidateQueries({ queryKey: ['leads', tenantId] });
           break;
         }
