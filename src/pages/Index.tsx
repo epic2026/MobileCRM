@@ -12,6 +12,7 @@ import AppErrorBoundary from '@/components/AppErrorBoundary';
 import AIAgentButton from '@/components/AIAgent/AIAgentButton';
 import AIAgentSheet from '@/components/AIAgent/AIAgentSheet';
 import { useToast } from '@/hooks/use-toast';
+import { track } from '@/services/analytics';
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState('leads');
@@ -23,6 +24,7 @@ const Index = () => {
     startTransition(() => {
       setActiveTab(tab);
     });
+    track({ event: 'tab_viewed', props: { tab } });
   };
   const { createCallLog } = useCallLogs({ fetchLogs: false, realtime: false });
 
@@ -57,6 +59,7 @@ const Index = () => {
       description: `Calling ${name || formattedPhone}`,
     });
 
+    track({ event: 'call_initiated' });
     window.location.href = `tel:${formattedPhone}`;
   };
 
@@ -69,6 +72,7 @@ const Index = () => {
       description: `Chatting with ${name || formattedPhone}`,
     });
 
+    track({ event: 'whatsapp_opened' });
     window.location.href = `https://wa.me/${waNumber}`;
   };
 
@@ -84,12 +88,12 @@ const Index = () => {
       </AppErrorBoundary>
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
       <AIAgentButton
-        onClick={() => setIsAgentOpen(true)}
+        onClick={() => { setIsAgentOpen(true); track({ event: 'aria_opened' }); }}
         isActive={isAgentOpen}
       />
       <AIAgentSheet
         isOpen={isAgentOpen}
-        onClose={() => setIsAgentOpen(false)}
+        onClose={() => { setIsAgentOpen(false); track({ event: 'aria_closed' }); }}
         onCall={handleCall}
         onWhatsApp={handleWhatsApp}
         onImportRecordings={() => {

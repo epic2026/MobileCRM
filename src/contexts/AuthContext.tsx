@@ -2,6 +2,8 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { isNativeApp } from '@/services/nativePlugins';
+import { setSentryUser, clearSentryUser } from '@/services/sentry';
+import { identifyUser, resetUser, track } from '@/services/analytics';
 
 type AppRole = 'super_admin' | 'admin' | 'sales' | null;
 
@@ -48,6 +50,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setSession(null);
     setUser(null);
     setRole(null);
+    clearSentryUser();
+    resetUser();
   };
 
   const applyValidatedSession = async (incomingSession: Session | null) => {
@@ -115,12 +119,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+  // Sync user identity to Sentry + PostHog whenever auth state settles
+  useEffect(() => {
+    if (user) {
+      setSentryUser({ id: user.id, email: user.email ?? undefined, role });
+      identifyUser(user.id, { email: user.email ?? undefined, role });
+    }
+  }, [user, role]);
 
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error) track({ event: 'user_signed_in', props: { role } });
     return { error: error as Error | null };
   };
 
@@ -142,6 +151,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
+    track({ event: 'user_signed_out' });
     await supabase.auth.signOut();
     clearAuthState();
   };

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTenant } from '@/contexts/TenantContext';
 import { useQueryClient } from '@tanstack/react-query';
+import { track } from '@/services/analytics';
 
 export type AgentActionType =
   | 'add_lead'
@@ -570,6 +571,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
 
       setMessages((prev) => [...prev, userMsg, loadingMsg]);
       setIsLoading(true);
+      track({ event: 'aria_message_sent', props: { length: text.trim().length } });
 
       // Snapshot history before the current message for the API call
       const historySnapshot = [...historyRef.current];
@@ -607,6 +609,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         // Execute side-effect actions
         if (action && action.type !== 'none') {
           await executeAction(action);
+          track({ event: 'aria_action_executed', props: { action_type: action.type } });
         }
 
         const assistantMsg: AgentMessage = {
@@ -650,6 +653,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
   const clearConversation = useCallback(() => {
     setMessages([]);
     historyRef.current = [];
+    track({ event: 'aria_conversation_cleared' });
   }, []);
 
   return { messages, isLoading, sendMessage, clearConversation };

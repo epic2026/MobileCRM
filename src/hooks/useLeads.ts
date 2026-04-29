@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTenant } from '@/contexts/TenantContext';
+import { track } from '@/services/analytics';
 
 export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
 
@@ -59,9 +60,10 @@ export const useLeads = () => {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['leads', tenantId] });
       toast({ title: 'Lead Created', description: 'New lead has been added.' });
+      track({ event: 'lead_created', props: { status: data.status, has_email: !!data.email, has_company: !!data.company } });
     },
     onError: (error) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -85,6 +87,7 @@ export const useLeads = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads', tenantId] });
       toast({ title: 'Lead Updated', description: 'Lead has been updated.' });
+      track({ event: 'lead_updated', props: { field: 'details' } });
     },
     onError: (error) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -100,6 +103,7 @@ export const useLeads = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads', tenantId] });
       toast({ title: 'Lead Deleted', description: 'Lead has been removed.' });
+      track({ event: 'lead_deleted' });
     },
     onError: (error) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });

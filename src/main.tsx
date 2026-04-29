@@ -2,6 +2,11 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import { isNativeApp } from "@/services/nativePlugins";
+import { initSentry } from "@/services/sentry";
+import { initPostHog } from "@/services/analytics";
+
+initSentry();
+initPostHog();
 
 if (typeof window !== "undefined" && "serviceWorker" in navigator) {
 	if (isNativeApp()) {

@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import type { Json } from '@/integrations/supabase/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTenant } from '@/contexts/TenantContext';
+import { track } from '@/services/analytics';
 
 export type ActivityType = 'call' | 'email' | 'meeting' | 'note' | 'task_created' | 'status_change';
 
@@ -102,10 +103,10 @@ export const useLeadActivities = (leadId: string | null) => {
 
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['lead_activities', leadId, tenantId] });
-      // Invalidate leads query so the list re-sorts by updated_at
       queryClient.invalidateQueries({ queryKey: ['leads', tenantId] });
+      track({ event: 'activity_logged', props: { type: data.type } });
     },
     onError: (error) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
