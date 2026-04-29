@@ -5,8 +5,8 @@ export interface CallLogEntry {
   phone: string;
   name: string;
   type: 'incoming' | 'outgoing' | 'missed' | 'unknown';
-  timestamp: string;
-  duration: number;
+  timestamp: number; // epoch ms from CallLog.Calls.DATE
+  duration: number;  // seconds
 }
 
 export interface CallLogPlugin {

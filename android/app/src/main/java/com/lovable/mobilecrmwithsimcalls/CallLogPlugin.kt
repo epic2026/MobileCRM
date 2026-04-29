@@ -59,13 +59,14 @@ class CallLogPlugin : Plugin() {
         ) == PackageManager.PERMISSION_GRANTED
 
     private fun fetch(call: PluginCall) {
+        val limit = call.getInt("limit", 500) ?: 500
         val logs = JSArray()
         val cursor = context.contentResolver.query(
             CallLog.Calls.CONTENT_URI,
             null,
             null,
             null,
-            "${CallLog.Calls.DATE} DESC LIMIT 50"
+            "${CallLog.Calls.DATE} DESC LIMIT $limit"
         )
 
         cursor?.use {

@@ -2,11 +2,14 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTenant } from '@/contexts/TenantContext';
 import { useCallRecordings } from '@/hooks/useCallRecordings';
+import { useLeads } from '@/hooks/useLeads';
 import { useToast } from '@/hooks/use-toast';
 import {
   ensureMediaAudioPermission,
+  ensureCallLogPermission,
   importSystemRecording,
   performSystemRecordingScan,
+  syncMissedCalls,
 } from '@/lib/callRecordingImport';
 import { isNativeApp } from '@/services/nativePlugins';
 
@@ -21,6 +24,7 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
   const { user } = useAuth();
   const { currentTenant } = useTenant();
   const { uploadRecording, createRecording, analyzeRecording } = useCallRecordings();
+  const { leads } = useLeads();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -34,24 +38,34 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
       hasRunRef.current = true;
 
       try {
+        // Request both permissions upfront — call log permission is needed for missed call
+        // sync and accurate inbound/outbound direction detection.
+        await ensureCallLogPermission();
+
         const granted = await ensureMediaAudioPermission();
         if (cancelled) return;
 
         if (!granted) {
           toast({
             title: 'Auto-import complete',
-            description: '0 recordings imported on app start (media permission not granted).',
+            description: '0 recordings imported (media permission not granted).',
           });
           return;
         }
 
-        const scanned = await performSystemRecordingScan({ userId: user.id, tenantId: currentTenant.id });
-        const autoImportCandidates = scanned.filter((recording) => recording.confidence !== 'low');
+        // Run recording import + missed call sync in parallel
+        const [scanned, missedCount] = await Promise.all([
+          performSystemRecordingScan({ userId: user.id, tenantId: currentTenant.id, leads }),
+          syncMissedCalls({ userId: user.id, tenantId: currentTenant.id, leads }),
+        ]);
+
+        if (cancelled) return;
+
+        const autoImportCandidates = scanned.filter((r) => r.confidence !== 'low');
 
         let importedCount = 0;
         for (const recording of autoImportCandidates) {
           if (cancelled) return;
-
           try {
             const imported = await importSystemRecording({
               recording,
@@ -62,23 +76,25 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
               analyzeRecording: analyzeRecording.mutate,
             });
             if (imported) importedCount += 1;
-            await new Promise((resolve) => {
-              timeoutId = window.setTimeout(resolve, 0);
-            });
+            await new Promise((resolve) => { timeoutId = window.setTimeout(resolve, 0); });
           } catch (error) {
             console.error('Startup auto-import failed for', recording.fileName, error);
           }
         }
 
+        const parts: string[] = [];
+        if (importedCount > 0) parts.push(`${importedCount} recording${importedCount === 1 ? '' : 's'} imported`);
+        if (missedCount > 0) parts.push(`${missedCount} missed call${missedCount === 1 ? '' : 's'} synced`);
+
         toast({
-          title: 'Auto-import complete',
-          description: `${importedCount} recording${importedCount === 1 ? '' : 's'} imported on app start.`,
+          title: 'Sync complete',
+          description: parts.length > 0 ? parts.join(', ') + '.' : 'Nothing new to import.',
         });
       } catch (error) {
         console.error('Startup recording sync failed:', error);
         toast({
           title: 'Auto-import failed',
-          description: error instanceof Error ? error.message : 'Unable to scan device recordings on app start.',
+          description: error instanceof Error ? error.message : 'Unable to scan device recordings.',
           variant: 'destructive',
         });
       }
@@ -86,20 +102,14 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
 
     frameId = window.requestAnimationFrame(() => {
       timeoutId = window.setTimeout(() => {
-        if (!cancelled) {
-          void runStartupImport();
-        }
+        if (!cancelled) void runStartupImport();
       }, 400);
     });
 
     return () => {
       cancelled = true;
-      if (frameId !== undefined) {
-        window.cancelAnimationFrame(frameId);
-      }
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
+      if (frameId !== undefined) window.cancelAnimationFrame(frameId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
   }, [enableAutoImport, currentTenant?.id, user?.id]);
 
@@ -111,6 +121,7 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
 
     const runManualImport = async () => {
       try {
+        await ensureCallLogPermission();
         const granted = await ensureMediaAudioPermission();
         if (cancelled) return;
 
@@ -123,10 +134,16 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
           return;
         }
 
-        const scanned = await performSystemRecordingScan({ userId: user.id, tenantId: currentTenant.id });
-        const candidates = scanned.filter((r) => r.confidence !== 'low');
+        const [scanned, missedCount] = await Promise.all([
+          performSystemRecordingScan({ userId: user.id, tenantId: currentTenant.id, leads }),
+          syncMissedCalls({ userId: user.id, tenantId: currentTenant.id, leads }),
+        ]);
 
+        if (cancelled) return;
+
+        const candidates = scanned.filter((r) => r.confidence !== 'low');
         let importedCount = 0;
+
         for (const recording of candidates) {
           if (cancelled) return;
           try {
@@ -144,9 +161,13 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
           }
         }
 
+        const parts: string[] = [];
+        if (importedCount > 0) parts.push(`${importedCount} recording${importedCount === 1 ? '' : 's'} imported`);
+        if (missedCount > 0) parts.push(`${missedCount} missed call${missedCount === 1 ? '' : 's'} synced`);
+
         toast({
           title: 'Import Complete',
-          description: `${importedCount} recording${importedCount === 1 ? '' : 's'} imported.`,
+          description: parts.length > 0 ? parts.join(', ') + '.' : 'Nothing new to import.',
         });
       } catch (err) {
         console.error('Manual recording import failed:', err);
@@ -160,9 +181,7 @@ const CallRecordingStartup = ({ manualImportTrigger = 0, enableAutoImport = true
 
     void runManualImport();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manualImportTrigger, currentTenant?.id, user?.id]);
 
