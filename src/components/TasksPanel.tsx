@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock, AlertCircle, Calendar, User, Plus, X, Edit2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTenant } from '@/contexts/TenantContext';
 import { useLeads } from '@/hooks/useLeads';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -103,6 +104,8 @@ const TaskCard = ({ task, onStatusChange, onEdit }: { task: Task; onStatusChange
 
 const TasksPanel = () => {
   const { user } = useAuth();
+  const { currentTenant } = useTenant();
+  const tenantId = currentTenant?.id ?? null;
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { leads } = useLeads();
@@ -209,6 +212,7 @@ const TasksPanel = () => {
         due_date: dueDateIso,
         status: taskForm.status,
         user_id: user?.id ?? null,
+        tenant_id: tenantId ?? '',
       });
 
       if (error) {
