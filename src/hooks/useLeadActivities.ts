@@ -105,7 +105,7 @@ export const useLeadActivities = (leadId: string | null) => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lead_activities', leadId, tenantId] });
       // Invalidate leads query so the list re-sorts by updated_at
-      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['leads', tenantId] });
     },
     onError: (error) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
