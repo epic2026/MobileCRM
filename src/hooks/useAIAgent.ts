@@ -1,9 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTenant } from '@/contexts/TenantContext';
 import { useQueryClient } from '@tanstack/react-query';
 
 export type AgentActionType =
+  | 'add_lead'
   | 'update_lead'
   | 'call_lead'
   | 'whatsapp_lead'
@@ -31,6 +33,8 @@ const sanitizeAgentAction = (action: AgentAction | undefined): AgentAction => {
   const params = action.params ?? {};
 
   switch (action.type) {
+    case 'add_lead':
+      return isNonEmptyString(params.name) && isNonEmptyString(params.phone) ? action : { type: 'none', params: {} };
     case 'update_lead':
       return isNonEmptyString(params.lead_id) && params.updates && typeof params.updates === 'object' && !Array.isArray(params.updates)
         ? action
@@ -63,6 +67,7 @@ const normalizeAgentAction = (rawAction: unknown): AgentAction | undefined => {
   if (typeof candidate.type !== 'string') return undefined;
 
   const allowedTypes: AgentActionType[] = [
+    'add_lead',
     'update_lead',
     'call_lead',
     'whatsapp_lead',
@@ -240,6 +245,8 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
+  const { currentTenant } = useTenant();
+  const tenantId = currentTenant?.id ?? null;
   const queryClient = useQueryClient();
   // Keep conversation history in a ref to avoid stale closure
   const historyRef = useRef<{ role: string; content: string }[]>([]);
@@ -288,6 +295,34 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
       const safeParams = (action.params ?? {}) as Record<string, unknown>;
 
       switch (action.type) {
+        case 'add_lead': {
+          if (!user || !tenantId) break;
+          const { name, phone, email, company, status, value, notes, source } = safeParams as {
+            name: string;
+            phone: string;
+            email?: string;
+            company?: string;
+            status?: string;
+            value?: number;
+            notes?: string;
+            source?: string;
+          };
+          await supabase.from('leads').insert({
+            name,
+            phone,
+            email: email ?? null,
+            company: company ?? null,
+            status: (status ?? 'new') as 'new',
+            value: value ?? null,
+            notes: notes ?? null,
+            source: source ?? null,
+            user_id: user.id,
+            tenant_id: tenantId,
+          });
+          queryClient.invalidateQueries({ queryKey: ['leads'] });
+          break;
+        }
+
         case 'update_lead': {
           const { lead_id, updates } = safeParams as {
             lead_id: string;
@@ -357,6 +392,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
             description: description ?? null,
             metadata: {},
             user_id: user.id,
+            tenant_id: tenantId ?? '',
           });
           queryClient.invalidateQueries({ queryKey: ['lead_activities', lead_id] });
           queryClient.invalidateQueries({ queryKey: ['lead_activities'] });
@@ -378,6 +414,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
             due_date: due_date ?? null,
             status: 'pending',
             user_id: user.id,
+            tenant_id: tenantId ?? '',
           });
           queryClient.invalidateQueries({ queryKey: ['lead_tasks', lead_id] });
           queryClient.invalidateQueries({ queryKey: ['lead_tasks'] });
@@ -390,7 +427,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
         }
       }
     },
-    [user, queryClient, onCall, onWhatsApp, onImportRecordings],
+    [user, tenantId, queryClient, onCall, onWhatsApp, onImportRecordings],
   );
 
   const fetchLeadsForFallback = useCallback(async (): Promise<LightweightLead[]> => {

@@ -21,6 +21,8 @@ const sanitizeAction = (rawAction: unknown) => {
       : {};
 
   switch (type) {
+    case "add_lead":
+      return isNonEmptyString(params.name) && isNonEmptyString(params.phone) ? { type, params } : fallback;
     case "update_lead":
       return isNonEmptyString(params.lead_id) && params.updates && typeof params.updates === "object" && !Array.isArray(params.updates)
         ? { type, params }
@@ -68,6 +70,7 @@ const CRM_ACTION_TOOL = {
             type: {
               type: "string",
               enum: [
+                "add_lead",
                 "update_lead",
                 "call_lead",
                 "whatsapp_lead",
@@ -216,13 +219,14 @@ ${activityLines || "No recent activity."}
 1. ALWAYS respond using the crm_action tool. Never return plain text.
 2. Match lead names using fuzzy matching — "rahul" → "Rahul Kumar", "priya" → "Priya Verma". Case-insensitive.
 3. Only use IDs from the leads list above. Never invent or guess IDs.
-4. If you cannot find a matching lead, set action.type="none" and politely ask for clarification.
+4. If the user wants to add/create a new lead, use action.type="add_lead". If you cannot find a matching lead for other actions, set action.type="none" and politely ask for clarification.
 5. Keep messages short and conversational (1-2 sentences). Use emoji where helpful.
 6. For insights/overview/digest/score/analytics requests: summarize pipeline stats, flag stale leads (no activity in 5+ days based on updated_at), list upcoming tasks, give win recommendations. Use action.type="none".
 7. Provide 2-3 relevant, actionable suggestion chips.
 8. Indian context awareness: understand Hindi/Hinglish intent, Indian name patterns, ₹ currency.
 
 ACTION PARAMS FORMAT:
+- add_lead: { name, phone, email?, company?, status?: "new"|"contacted"|"qualified"|"proposal"|"negotiation"|"won"|"lost", value?, notes?, source? }
 - update_lead: { lead_id, lead_name, updates: { status?, name?, phone?, email?, company?, notes?, value? } }
 - call_lead: { lead_id, lead_name, phone }
 - whatsapp_lead: { lead_id, lead_name, phone }
