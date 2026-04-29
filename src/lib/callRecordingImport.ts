@@ -48,7 +48,7 @@ const resolveDirection = (
     const sysMatch = systemLogs.find(
       (log) =>
         toLast10(log.phone) === targetLast10 &&
-        Math.abs(log.timestamp - lastModified) < 2 * 60 * 1000,
+        Math.abs(log.timestamp - lastModified) < 10 * 1000,
     );
     if (sysMatch) return sysMatch.type === 'outgoing' ? 'outgoing' : 'incoming';
 
@@ -413,7 +413,7 @@ export const syncMissedCalls = async ({
     const alreadyExists = existingMissed?.some(
       (existing) =>
         toLast10(existing.phone) === toLast10(log.phone) &&
-        Math.abs(new Date(existing.created_at).getTime() - log.timestamp) < 2 * 60 * 1000,
+        Math.abs(new Date(existing.created_at).getTime() - log.timestamp) < 10 * 1000,
     );
     if (alreadyExists) continue;
 
