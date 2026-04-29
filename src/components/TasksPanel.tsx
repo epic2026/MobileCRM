@@ -142,28 +142,30 @@ const TasksPanel = () => {
   };
 
   const { data: tasks = [], isLoading, refetch } = useQuery({
-    queryKey: ['all_tasks', user?.id],
+    queryKey: ['all_tasks', tenantId],
     queryFn: async () => {
-      if (!user) return [];
+      if (!user || !tenantId) return [];
       const { data, error } = await supabase
         .from('lead_tasks')
         .select(`
           *,
           lead:leads(name, company)
         `)
+        .eq('tenant_id', tenantId)
         .order('due_date', { ascending: true, nullsFirst: false });
 
       if (error) throw error;
       return data as Task[];
     },
-    enabled: !!user,
+    enabled: !!user && !!tenantId,
   });
 
   const updateTaskStatus = async (taskId: string, newStatus: TaskStatus) => {
     const { error } = await supabase
       .from('lead_tasks')
       .update({ status: newStatus })
-      .eq('id', taskId);
+      .eq('id', taskId)
+      .eq('tenant_id', tenantId ?? '');
 
     if (error) {
       toast({ title: 'Error', description: 'Failed to update task', variant: 'destructive' });
@@ -174,6 +176,7 @@ const TasksPanel = () => {
   };
 
   const saveTask = async () => {
+    if (!user || !tenantId) return;
     const title = taskForm.title.trim();
     if (!title) {
       toast({ title: 'Missing title', description: 'Please enter a task title.', variant: 'destructive' });

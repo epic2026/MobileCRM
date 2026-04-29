@@ -319,7 +319,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
             user_id: user.id,
             tenant_id: tenantId,
           });
-          queryClient.invalidateQueries({ queryKey: ['leads'] });
+          queryClient.invalidateQueries({ queryKey: ['leads', tenantId] });
           break;
         }
 
@@ -370,7 +370,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
             title: string;
             description?: string;
           };
-          if (!user || !lead_id) break;
+          if (!user || !lead_id || !tenantId) break;
 
           if (action.type === 'add_note') {
             const noteText = isNonEmptyString((safeParams as { note?: string }).note)
@@ -382,7 +382,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
             const nextNotes = existingNotes ? `${existingNotes}\n${noteText}` : noteText;
 
             await supabase.from('leads').update({ notes: nextNotes }).eq('id', lead_id);
-            queryClient.invalidateQueries({ queryKey: ['leads'] });
+            queryClient.invalidateQueries({ queryKey: ['leads', tenantId] });
           }
 
           await supabase.from('lead_activities').insert({
@@ -392,7 +392,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
             description: description ?? null,
             metadata: {},
             user_id: user.id,
-            tenant_id: tenantId ?? '',
+            tenant_id: tenantId,
           });
           queryClient.invalidateQueries({ queryKey: ['lead_activities', lead_id] });
           queryClient.invalidateQueries({ queryKey: ['lead_activities'] });
@@ -406,7 +406,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
             description?: string;
             due_date?: string;
           };
-          if (!user || !lead_id) break;
+          if (!user || !lead_id || !tenantId) break;
           await supabase.from('lead_tasks').insert({
             lead_id,
             title: title ?? 'Task',
@@ -414,7 +414,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
             due_date: due_date ?? null,
             status: 'pending',
             user_id: user.id,
-            tenant_id: tenantId ?? '',
+            tenant_id: tenantId,
           });
           queryClient.invalidateQueries({ queryKey: ['lead_tasks', lead_id] });
           queryClient.invalidateQueries({ queryKey: ['lead_tasks'] });
@@ -431,9 +431,11 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
   );
 
   const fetchLeadsForFallback = useCallback(async (): Promise<LightweightLead[]> => {
+    if (!tenantId) return [];
     const { data, error } = await supabase
       .from('leads')
       .select('id, name, phone, email, notes')
+      .eq('tenant_id', tenantId)
       .order('updated_at', { ascending: false })
       .limit(200);
 
@@ -442,7 +444,7 @@ export const useAIAgent = ({ onCall, onWhatsApp, onImportRecordings }: UseAIAgen
     }
 
     return data as LightweightLead[];
-  }, []);
+  }, [tenantId]);
 
   const getValidAccessToken = useCallback(async () => {
     const {

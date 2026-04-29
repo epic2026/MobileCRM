@@ -80,9 +80,11 @@ const CallRecordingPlayer = ({ recording }: CallRecordingPlayerProps) => {
 
         if (existingTasks?.length) return;
 
+        if (!currentTenant?.id) return;
+
         const { error } = await supabase.from('lead_tasks').insert({
           lead_id: recording.lead_id,
-          tenant_id: currentTenant?.id ?? recording.tenant_id,
+          tenant_id: currentTenant.id,
           title: normalizedActions[0]?.slice(0, 80) || 'Follow up after call',
           description,
           due_date: null,
