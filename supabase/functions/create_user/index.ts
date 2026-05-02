@@ -18,15 +18,14 @@ serve(async (req) => {
       });
     }
 
-    const { email, password, fullName, role, tenantId } = await req.json() as {
+    const { email, fullName, role, tenantId } = await req.json() as {
       email: string;
-      password: string;
       fullName: string;
       role: "super_admin" | "admin" | "sales";
       tenantId?: string;
     };
 
-    if (!email || !password || !fullName || !role) {
+    if (!email || !fullName || !role) {
       return new Response(JSON.stringify({ error: "Missing required fields" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -43,13 +42,16 @@ serve(async (req) => {
 
     const { adminClient } = createClients(authHeader);
 
-    // Use service-role admin API — does NOT replace the caller's browser session
-    const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
+    const appUrl = Deno.env.get("APP_URL") ?? Deno.env.get("SUPABASE_URL")?.replace(".supabase.co", ".vercel.app") ?? "";
+
+    // Send invite email — user sets their own password via the link
+    const { data: newUser, error: createError } = await adminClient.auth.admin.inviteUserByEmail(
       email,
-      password,
-      email_confirm: true,
-      user_metadata: { full_name: fullName },
-    });
+      {
+        data: { full_name: fullName },
+        redirectTo: `${appUrl}/invite`,
+      },
+    );
 
     if (createError || !newUser.user) {
       throw new Error(createError?.message ?? "Failed to create user");

@@ -221,7 +221,6 @@ const AdminDashboard = () => {
 
   const [newUserData, setNewUserData] = useState({
     email: '',
-    password: '',
     fullName: '',
     role: 'sales' as 'super_admin' | 'admin' | 'sales',
   });
@@ -978,29 +977,28 @@ const AdminDashboard = () => {
   ], [callActivityReport.filtered]);
 
   const createUser = useMutation({
-    mutationFn: async (data: { email: string; password: string; fullName: string; role: 'super_admin' | 'admin' | 'sales' }) => {
+    mutationFn: async (data: { email: string; fullName: string; role: 'super_admin' | 'admin' | 'sales' }) => {
       // Use Edge Function with service-role key so the caller's browser session is never swapped
       const { data: result, error } = await supabase.functions.invoke('create_user', {
         body: {
           email: data.email,
-          password: data.password,
           fullName: data.fullName,
           role: data.role,
           tenantId: (currentTenant && data.role !== 'super_admin') ? currentTenant.id : undefined,
         },
       });
 
-      if (error) throw new Error(error.message || 'Failed to create user');
-      if (result?.error) throw new Error(typeof result.error === 'string' ? result.error : 'Failed to create user');
+      if (error) throw new Error(error.message || 'Failed to send invite');
+      if (result?.error) throw new Error(typeof result.error === 'string' ? result.error : 'Failed to send invite');
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      toast({ title: 'User Created', description: 'User has been created successfully.' });
+      toast({ title: 'Invite Sent', description: `A signup link has been sent to ${variables.email}.` });
       setIsCreateDialogOpen(false);
-      setNewUserData({ email: '', password: '', fullName: '', role: 'sales' });
+      setNewUserData({ email: '', fullName: '', role: 'sales' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Failed to Create User', description: error.message, variant: 'destructive' });
+      toast({ title: 'Failed to Send Invite', description: error.message, variant: 'destructive' });
     },
   });
 
@@ -2899,8 +2897,8 @@ const AdminDashboard = () => {
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Create Sales User</DialogTitle>
-                  <DialogDescription>Add a new user account and role.</DialogDescription>
+                  <DialogTitle>Invite User</DialogTitle>
+                  <DialogDescription>Send a signup link to the user's email. They'll set their own password.</DialogDescription>
                 </DialogHeader>
                 <form
                   onSubmit={(event) => {
@@ -2927,16 +2925,6 @@ const AdminDashboard = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Password</Label>
-                    <Input
-                      type="password"
-                      minLength={6}
-                      value={newUserData.password}
-                      onChange={(event) => setNewUserData((prev) => ({ ...prev, password: event.target.value }))}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
                     <Label>Role</Label>
                     <Select
                       value={newUserData.role}
@@ -2953,7 +2941,7 @@ const AdminDashboard = () => {
                     </Select>
                   </div>
                   <Button type="submit" className="w-full" disabled={createUser.isPending}>
-                    {createUser.isPending ? 'Creating...' : 'Create User'}
+                    {createUser.isPending ? 'Sending Invite...' : 'Send Invite'}
                   </Button>
                 </form>
               </DialogContent>
