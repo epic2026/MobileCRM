@@ -2531,14 +2531,6 @@ const AdminDashboard = () => {
 
   const renderLeads = () => (
     <div className="space-y-4">
-      <div className="sticky top-0 bg-background z-10 px-4 pt-6 pb-4 border-b border-border/60">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Manage Leads</h1>
-            <p className="text-sm text-muted-foreground">{leadRows.length} leads available</p>
-          </div>
-        </div>
-      </div>
       <Card className="border-border/80 shadow-sm">
         <CardContent className="pt-4">
           <LeadAssignment onLeadClick={(lead) => setSelectedAdminLead(lead)} />
