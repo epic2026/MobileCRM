@@ -110,6 +110,7 @@ import {
   User,
 } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartLegend } from '@/components/ui/chart';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   LineChart,
   Line,
@@ -136,7 +137,7 @@ import LeadDetailSheet from '@/components/LeadDetailSheet';
 import type { Lead as LeadHookType, LeadStatus as LeadStatusHookType } from '@/hooks/useLeads';
 import type { Database } from '@/integrations/supabase/types';
 
-type AdminSection = 'overview' | 'leads' | 'call-activity' | 'marketplace' | 'activity' | 'tenants' | 'settings';
+type AdminSection = 'overview' | 'leads' | 'analytics' | 'team' | 'settings' | 'tenants';
 type Lead = Database['public']['Tables']['leads']['Row'];
 type LeadActivity = Database['public']['Tables']['lead_activities']['Row'];
 type CallLog = Database['public']['Tables']['call_logs']['Row'];
@@ -211,7 +212,7 @@ const AdminDashboard = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [activeSection, setActiveSection] = useState<AdminSection>('leads');
+  const [activeSection, setActiveSection] = useState<AdminSection>('overview');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
@@ -241,7 +242,7 @@ const AdminDashboard = () => {
     tasks: false,
     activities: false,
   });
-  const [callReportView, setCallReportView] = useState<'overview' | 'user' | 'logs' | 'time' | 'hourly' | 'productivity'>('overview');
+  const [callReportView, setCallReportView] = useState<'overview' | 'user' | 'logs' | 'time' | 'hourly' | 'productivity' | 'activity'>('overview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [leadStatusFilter, setLeadStatusFilter] = useState<'all' | 'new' | 'contacted' | 'qualified' | 'proposal' | 'won' | 'lost'>('all');
@@ -455,7 +456,7 @@ const AdminDashboard = () => {
     }));
   }, [zohoStatus]);
 
-  const { data: leads = [] } = useQuery({
+  const { data: leads = [], isLoading: leadsLoading } = useQuery({
     queryKey: ['admin-leads', currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant) return [];
@@ -470,7 +471,7 @@ const AdminDashboard = () => {
     enabled: canAccessAdminDashboard && !!currentTenant,
   });
 
-  const { data: activities = [] } = useQuery({
+  const { data: activities = [], isLoading: activitiesLoading } = useQuery({
     queryKey: ['admin-activity-feed', currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant) return [];
@@ -1375,7 +1376,7 @@ const AdminDashboard = () => {
       return;
     }
 
-    if (activeSection === 'call-activity') {
+    if (activeSection === 'analytics') {
       exportCsv(
         'admin-call-activity.csv',
         ['Time', 'User', 'Lead/Contact', 'Type', 'Duration Seconds', 'Outcome'],
@@ -1391,7 +1392,7 @@ const AdminDashboard = () => {
       return;
     }
 
-    if (activeSection === 'settings') {
+    if (activeSection === 'team') {
       exportCsv(
         'admin-users.csv',
         ['Name', 'Email', 'Role', 'Status', 'Created'],
@@ -1401,20 +1402,6 @@ const AdminDashboard = () => {
           entry.role || 'No role',
           entry.is_active ? 'Active' : 'Inactive',
           format(new Date(entry.created_at), 'yyyy-MM-dd'),
-        ]),
-      );
-      return;
-    }
-
-    if (activeSection === 'activity') {
-      exportCsv(
-        'admin-activity-log.csv',
-        ['Time', 'Activity', 'Lead', 'User'],
-        filteredActivities.map((entry) => [
-          format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm'),
-          entry.title,
-          entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A',
-          entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System',
         ]),
       );
       return;
@@ -1433,82 +1420,47 @@ const AdminDashboard = () => {
     );
   };
 
-  const navigationItems: Array<{ id: AdminSection; label: string; caption: string; icon: typeof LayoutDashboard }> = [
-    { id: 'leads', label: 'Manage Leads', caption: 'Lead pipeline', icon: Users },
-    { id: 'call-activity', label: 'Reports', caption: 'Call insights', icon: Activity },
-    { id: 'activity', label: 'Activity', caption: 'Audit trail', icon: Activity },
-    { id: 'marketplace', label: 'Integrations', caption: 'CRM sync', icon: Link2 },
-    { id: 'settings', label: 'Users', caption: 'Platform users', icon: Settings },
-    ...(isSuperAdmin
-      ? [
-          { id: 'tenants', label: 'Tenants', caption: 'Organization settings', icon: Building },
-        ]
-      : []),
+  const navigationItems: Array<{ id: AdminSection; label: string; icon: typeof LayoutDashboard }> = [
+    { id: 'overview',   label: 'Overview',      icon: LayoutDashboard },
+    { id: 'leads',      label: 'Leads',         icon: Users },
+    { id: 'analytics',  label: 'Analytics',     icon: Activity },
+    { id: 'team',       label: 'Team',          icon: Users },
+    { id: 'settings',   label: 'Settings',      icon: Settings },
+    ...(isSuperAdmin ? [{ id: 'tenants' as AdminSection, label: 'Tenants', icon: Building }] : []),
   ];
 
   const activeSectionTitle =
-    activeSection === 'overview'
-      ? 'Admin Dashboard'
-      : activeSection === 'leads'
-        ? 'Manage Leads'
-        : activeSection === 'call-activity'
-          ? 'Reports'
-          : activeSection === 'marketplace'
-            ? 'Integrations'
-            : activeSection === 'activity'
-              ? 'Activity'
-              : activeSection === 'tenants'
-                ? 'Tenant Settings'
-                : 'Users';
+    activeSection === 'overview'   ? 'Overview' :
+    activeSection === 'leads'      ? 'Leads' :
+    activeSection === 'analytics'  ? 'Analytics' :
+    activeSection === 'team'       ? 'Team' :
+    activeSection === 'tenants'    ? 'Tenants' :
+    'Settings';
 
   const activeSectionDescription =
-    activeSection === 'overview'
-      ? 'Operational visibility across leads, calls, integrations, and user governance.'
-      : activeSection === 'leads'
-        ? 'Browse, filter, import, and assign lead records from one workspace.'
-        : activeSection === 'call-activity'
-          ? 'Inspect team calling performance, quality, and raw logs.'
-          : activeSection === 'marketplace'
-            ? 'Manage CRM connectivity, sync jobs, and connector health.'
-            : activeSection === 'activity'
-              ? 'Audit activity feed across lead actions for admin visibility.'
-              : activeSection === 'tenants'
-                ? 'Manage organization settings, branding, and subscription.'
-                : 'Create, edit, and manage role/access for sales users.';
+    activeSection === 'overview'   ? 'KPIs, recent activity, and quick insights.' :
+    activeSection === 'leads'      ? 'Browse, filter, import and assign lead records.' :
+    activeSection === 'analytics'  ? 'Call performance, agent productivity, and activity logs.' :
+    activeSection === 'team'       ? 'Manage users, roles, and access.' :
+    activeSection === 'tenants'    ? 'Manage organizations and subscriptions.' :
+    'Tenant config, integrations, and org settings.';
 
   const activeSectionCount =
-    activeSection === 'overview'
-      ? `${leads.length + users.length + callLogs.length} records monitored`
-      : activeSection === 'leads'
-        ? `${leadRows.length} leads visible`
-        : activeSection === 'call-activity'
-          ? `${callActivityReport.filtered.length} calls in report`
-          : activeSection === 'marketplace'
-            ? `${syncLogs.length} sync runs tracked`
-            : activeSection === 'activity'
-              ? `${filteredActivities.length} activity events`
-              : activeSection === 'tenants'
-                ? currentTenant ? `${tenants.length} tenant(s)` : 'No tenant selected'
-                : `${users.length} users managed`;
+    activeSection === 'overview'   ? `${leads.length} leads · ${users.length} users · ${callLogs.length} calls` :
+    activeSection === 'leads'      ? `${leadRows.length} leads` :
+    activeSection === 'analytics'  ? `${callActivityReport.filtered.length} calls in range` :
+    activeSection === 'team'       ? `${users.length} users` :
+    activeSection === 'tenants'    ? `${tenants.length} tenants` :
+    'Org configuration';
 
   const primaryActionLabel =
-    activeSection === 'settings'
-      ? 'Add User'
-      : activeSection === 'marketplace'
-        ? (zohoStatus?.connected ? 'Reconnect CRM' : 'Connect CRM')
-        : activeSection === 'call-activity'
-          ? 'Open Logs'
-          : 'Quick Actions';
+    activeSection === 'team'       ? 'Invite User' :
+    activeSection === 'analytics'  ? 'Export' :
+    'Quick Actions';
 
   const handlePrimaryAction = () => {
-    if (activeSection === 'settings') {
+    if (activeSection === 'team') {
       setIsCreateDialogOpen(true);
-      return;
-    }
-
-    if (activeSection === 'marketplace') {
-      void handleConnectZoho();
-      return;
     }
   };
 
@@ -1547,8 +1499,250 @@ const AdminDashboard = () => {
     }
   };
 
-  const renderCallActivity = () => (
+  const renderSectionSkeleton = (variant: 'overview' | 'analytics' | 'table') => {
+    if (variant === 'table') {
+      return (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+          </div>
+          <Skeleton className="h-64 rounded-xl" />
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-6 pb-8">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-4">
+            <Skeleton className="h-64 rounded-xl" />
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+            </div>
+          </div>
+          <Skeleton className="h-80 rounded-xl" />
+        </div>
+      </div>
+    );
+  };
+
+  const renderOverview = () => {
+    if (leadsLoading || activitiesLoading) return renderSectionSkeleton('overview');
+    const totalLeads = leads.length;
+    const newLeads = leads.filter(l => l.status === 'new').length;
+    const wonLeads = leads.filter(l => l.status === 'won').length;
+    const activeUsers = users.filter(u => u.is_active).length;
+    const totalCalls = callActivityReport.totals.totalCalls;
+    const connectRate = callActivityReport.totals.answerRate;
+
+    return (
+      <div className="space-y-6 pb-8">
+        {/* KPI row */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            {
+              label: 'Total leads',
+              value: totalLeads,
+              sub: `${newLeads} new`,
+              icon: Users,
+              color: 'text-blue-600',
+              bg: 'bg-blue-50',
+              border: 'border-blue-100',
+            },
+            {
+              label: 'Deals won',
+              value: wonLeads,
+              sub: `${totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0}% win rate`,
+              icon: TrendingUp,
+              color: 'text-emerald-600',
+              bg: 'bg-emerald-50',
+              border: 'border-emerald-100',
+            },
+            {
+              label: 'Calls this period',
+              value: totalCalls,
+              sub: `${connectRate}% connect rate`,
+              icon: Phone,
+              color: 'text-violet-600',
+              bg: 'bg-violet-50',
+              border: 'border-violet-100',
+            },
+            {
+              label: 'Active users',
+              value: activeUsers,
+              sub: `${users.length} total`,
+              icon: UserCheck,
+              color: 'text-amber-600',
+              bg: 'bg-amber-50',
+              border: 'border-amber-100',
+            },
+          ].map((kpi) => {
+            const Icon = kpi.icon;
+            return (
+              <div key={kpi.label} className={`rounded-xl border ${kpi.border} ${kpi.bg} p-4 shadow-sm ring-1 ring-black/[0.04]`}>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-slate-500">{kpi.label}</p>
+                    <p className={`mt-1 text-2xl font-bold ${kpi.color}`}>{kpi.value}</p>
+                    <p className="mt-0.5 text-xs text-slate-400">{kpi.sub}</p>
+                  </div>
+                  <div className={`rounded-lg ${kpi.bg} p-2`}>
+                    <Icon className={`h-5 w-5 ${kpi.color}`} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Insights row */}
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-4">
+            {/* Call trend chart */}
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Call volume — last 10 days</p>
+                  <p className="text-xs text-slate-400">Total vs connected calls</p>
+                </div>
+              </div>
+              {callActivityReport.byCalendar.length === 0 ? (
+                <div className="flex h-40 flex-col items-center justify-center gap-2 text-center">
+                  <Phone className="h-8 w-8 text-slate-200" />
+                  <p className="text-sm text-slate-400">No call data in the selected range.</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={180}>
+                  <AreaChart data={callActivityReport.byCalendar.slice(-10)} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="totalGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="connectedGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.15} />
+                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="date" tickFormatter={(d) => format(new Date(d), 'MMM d')} tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                    <RechartsTooltip />
+                    <Area type="monotone" dataKey="totalCalls" name="Total" stroke="#6366f1" fill="url(#totalGrad)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="connectedCalls" name="Connected" stroke="#22c55e" fill="url(#connectedGrad)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Quick insights */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { label: 'Overdue tasks', value: dashboardInsights.overdueTasks, color: dashboardInsights.overdueTasks > 0 ? 'text-rose-600' : 'text-emerald-600', bg: dashboardInsights.overdueTasks > 0 ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100' },
+                { label: 'Stale leads', value: dashboardInsights.staleLeads, color: dashboardInsights.staleLeads > 0 ? 'text-amber-600' : 'text-emerald-600', bg: dashboardInsights.staleLeads > 0 ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100' },
+                { label: 'Calls w/o followup', value: dashboardInsights.callsWithoutFollowup, color: dashboardInsights.callsWithoutFollowup > 0 ? 'text-orange-600' : 'text-emerald-600', bg: dashboardInsights.callsWithoutFollowup > 0 ? 'bg-orange-50 border-orange-100' : 'bg-emerald-50 border-emerald-100' },
+                { label: 'Connected calls', value: dashboardInsights.connectedCalls, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-100' },
+              ].map((item) => (
+                <div key={item.label} className={`rounded-xl border ${item.bg} p-3`}>
+                  <p className="text-xs font-medium text-slate-500">{item.label}</p>
+                  <p className={`mt-1 text-xl font-bold ${item.color}`}>{item.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Activity feed */}
+          <div className="rounded-xl border border-slate-200 bg-white">
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-900">Recent activity</p>
+              <button
+                onClick={() => setActiveSection('analytics')}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                View all
+              </button>
+            </div>
+            <div className="divide-y divide-slate-50 max-h-[340px] overflow-y-auto">
+              {activities.slice(0, 15).map((entry) => {
+                const userName = entry.user_id
+                  ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User'
+                  : 'System';
+                const initials = getInitials(
+                  entry.user_id ? userMap.get(entry.user_id)?.full_name || null : null,
+                  entry.user_id ? userMap.get(entry.user_id)?.email || 'sys' : 'sys',
+                );
+                const avatarColor = getAvatarColor(entry.user_id || 'system');
+                return (
+                  <div key={entry.id} className="flex gap-3 px-4 py-3">
+                    <div className={`h-7 w-7 shrink-0 rounded-full ${avatarColor} flex items-center justify-center text-xs font-bold text-white`}>
+                      {initials}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-slate-900">{entry.title}</p>
+                      <p className="text-[11px] text-slate-400">{userName} · {format(new Date(entry.created_at), 'MMM d, h:mm a')}</p>
+                    </div>
+                  </div>
+                );
+              })}
+              {activities.length === 0 && (
+                <div className="flex h-32 items-center justify-center">
+                  <p className="text-sm text-slate-400">No activity yet.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const getInitials = (name: string | null, email: string) => {
+    if (name) {
+      const parts = name.trim().split(' ');
+      return parts.length >= 2
+        ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+        : name.slice(0, 2).toUpperCase();
+    }
+    return email.slice(0, 2).toUpperCase();
+  };
+
+  const avatarColors = [
+    'bg-blue-500', 'bg-violet-500', 'bg-emerald-500',
+    'bg-amber-500', 'bg-rose-500', 'bg-cyan-500', 'bg-indigo-500',
+  ];
+
+  const getAvatarColor = (seed: string) => {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+    return avatarColors[Math.abs(hash) % avatarColors.length];
+  };
+
+  const renderAnalytics = () => {
+    if (isFetchingCallLogs && callLogs.length === 0) return renderSectionSkeleton('analytics');
+    return (
     <div className="space-y-4">
+      {/* KPI cards — primary tier: shadow-sm + ring to lift above chart cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm ring-1 ring-black/[0.04]">
+          <p className="text-xs font-medium text-slate-500">Total calls</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900">{callActivityReport.totals.totalCalls}</p>
+        </div>
+        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm ring-1 ring-black/[0.04]">
+          <p className="text-xs font-medium text-slate-500">Connect rate</p>
+          <p className="mt-1 text-2xl font-bold text-blue-600">{callActivityReport.totals.answerRate}%</p>
+        </div>
+        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm ring-1 ring-black/[0.04]">
+          <p className="text-xs font-medium text-slate-500">Total talk time</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
+        </div>
+        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm ring-1 ring-black/[0.04]">
+          <p className="text-xs font-medium text-slate-500">Active users</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900">{callActivityReport.byUser.length}</p>
+        </div>
+      </div>
+
       {/* Minimalist Control Strip */}
       <Card className="border-border/50 bg-gradient-to-r from-slate-50 to-white shadow-sm">
         <CardContent className="p-4">
@@ -1629,27 +1823,9 @@ const AdminDashboard = () => {
               </Button>
             </div>
 
-            {/* Right: KPI Metrics */}
-            <div className="flex flex-wrap items-center gap-3 border-l border-slate-200 pl-4">
-              <div className="flex flex-col gap-0.5 min-w-fit">
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Calls</p>
-                <p className="text-lg font-bold text-slate-900">{callActivityReport.totals.totalCalls}</p>
-              </div>
-              <div className="flex flex-col gap-0.5 min-w-fit">
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Connect</p>
-                <p className="text-lg font-bold text-blue-600">{callActivityReport.totals.answerRate}%</p>
-              </div>
-              <div className="flex flex-col gap-0.5 min-w-fit">
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Duration</p>
-                <p className="text-lg font-bold text-slate-900">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
-              </div>
-              <div className="flex flex-col gap-0.5 min-w-fit">
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Users</p>
-                <p className="text-lg font-bold text-slate-900">{callActivityReport.byUser.length}</p>
-              </div>
-              <div className="text-[10px] text-slate-400 border-l border-slate-200 pl-3">
-                <p>Updated: {lastUpdatedAt}</p>
-              </div>
+            {/* Right: Updated timestamp */}
+            <div className="text-xs text-slate-400">
+              <p>Updated: {lastUpdatedAt}</p>
             </div>
           </div>
 
@@ -1686,52 +1862,80 @@ const AdminDashboard = () => {
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <Card className="border-border/70">
                 <CardContent className="pt-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Calls vs prior period</p>
+                  <p className="text-xs font-medium text-slate-500">Calls vs prior period</p>
                   <p className="text-2xl font-semibold">{callActivityReport.totals.totalCalls}</p>
                   <div className="mt-2 flex items-center gap-2">
-                    <Badge variant={callActivityReport.totals.totalCalls >= comparisonTotals.totalCalls ? 'secondary' : 'destructive'}>
-                      {callActivityReport.totals.totalCalls - comparisonTotals.totalCalls >= 0 ? '+' : ''}
-                      {callActivityReport.totals.totalCalls - comparisonTotals.totalCalls}
-                    </Badge>
+                    {(() => {
+                      const delta = callActivityReport.totals.totalCalls - comparisonTotals.totalCalls;
+                      const positive = delta >= 0;
+                      const Icon = positive ? ArrowUpRight : ArrowDownRight;
+                      return (
+                        <span className={`flex items-center gap-0.5 text-sm font-semibold ${positive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          <Icon className="h-4 w-4" />
+                          {positive ? '+' : ''}{delta}
+                        </span>
+                      );
+                    })()}
                     <p className="text-xs text-muted-foreground">vs {format(comparisonRangeBounds.rangeStart, 'MMM d')}–{format(comparisonRangeBounds.rangeEnd, 'MMM d')}</p>
                   </div>
                 </CardContent>
               </Card>
               <Card className="border-border/70">
                 <CardContent className="pt-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Answer rate change</p>
+                  <p className="text-xs font-medium text-slate-500">Answer rate change</p>
                   <p className="text-2xl font-semibold">{callActivityReport.totals.answerRate}%</p>
                   <div className="mt-2 flex items-center gap-2">
-                    <Badge variant={callActivityReport.totals.answerRate >= comparisonTotals.answerRate ? 'secondary' : 'destructive'}>
-                      {callActivityReport.totals.answerRate - comparisonTotals.answerRate >= 0 ? '+' : ''}
-                      {callActivityReport.totals.answerRate - comparisonTotals.answerRate}%
-                    </Badge>
+                    {(() => {
+                      const delta = callActivityReport.totals.answerRate - comparisonTotals.answerRate;
+                      const positive = delta >= 0;
+                      const Icon = positive ? ArrowUpRight : ArrowDownRight;
+                      return (
+                        <span className={`flex items-center gap-0.5 text-sm font-semibold ${positive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          <Icon className="h-4 w-4" />
+                          {positive ? '+' : ''}{delta}%
+                        </span>
+                      );
+                    })()}
                     <p className="text-xs text-muted-foreground">previous {comparisonTotals.totalCalls} calls</p>
                   </div>
                 </CardContent>
               </Card>
               <Card className="border-border/70">
                 <CardContent className="pt-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Talk time change</p>
+                  <p className="text-xs font-medium text-slate-500">Talk time change</p>
                   <p className="text-2xl font-semibold">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
                   <div className="mt-2 flex items-center gap-2">
-                    <Badge variant={callActivityReport.totals.totalDurationSeconds >= comparisonTotals.totalDurationSeconds ? 'secondary' : 'destructive'}>
-                      {callActivityReport.totals.totalDurationSeconds - comparisonTotals.totalDurationSeconds >= 0 ? '+' : ''}
-                      {formatCallDuration(Math.abs(callActivityReport.totals.totalDurationSeconds - comparisonTotals.totalDurationSeconds))}
-                    </Badge>
+                    {(() => {
+                      const delta = callActivityReport.totals.totalDurationSeconds - comparisonTotals.totalDurationSeconds;
+                      const positive = delta >= 0;
+                      const Icon = positive ? ArrowUpRight : ArrowDownRight;
+                      return (
+                        <span className={`flex items-center gap-0.5 text-sm font-semibold ${positive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          <Icon className="h-4 w-4" />
+                          {positive ? '+' : ''}{formatCallDuration(Math.abs(delta))}
+                        </span>
+                      );
+                    })()}
                     <p className="text-xs text-muted-foreground">previous period</p>
                   </div>
                 </CardContent>
               </Card>
               <Card className="border-border/70">
                 <CardContent className="pt-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Unique numbers change</p>
+                  <p className="text-xs font-medium text-slate-500">Unique numbers change</p>
                   <p className="text-2xl font-semibold">{callActivityReport.totals.uniqueNumbersCalled}</p>
                   <div className="mt-2 flex items-center gap-2">
-                    <Badge variant={callActivityReport.totals.uniqueNumbersCalled >= comparisonTotals.uniqueNumbersCalled ? 'secondary' : 'destructive'}>
-                      {callActivityReport.totals.uniqueNumbersCalled - comparisonTotals.uniqueNumbersCalled >= 0 ? '+' : ''}
-                      {callActivityReport.totals.uniqueNumbersCalled - comparisonTotals.uniqueNumbersCalled}
-                    </Badge>
+                    {(() => {
+                      const delta = callActivityReport.totals.uniqueNumbersCalled - comparisonTotals.uniqueNumbersCalled;
+                      const positive = delta >= 0;
+                      const Icon = positive ? ArrowUpRight : ArrowDownRight;
+                      return (
+                        <span className={`flex items-center gap-0.5 text-sm font-semibold ${positive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          <Icon className="h-4 w-4" />
+                          {positive ? '+' : ''}{delta}
+                        </span>
+                      );
+                    })()}
                     <p className="text-xs text-muted-foreground">previous set: {comparisonTotals.uniqueNumbersCalled}</p>
                   </div>
                 </CardContent>
@@ -1740,120 +1944,125 @@ const AdminDashboard = () => {
           ) : null}
 
           <Tabs value={callReportView} onValueChange={(value) => setCallReportView(value as typeof callReportView)}>
-            <TabsList className="flex-wrap h-auto gap-1">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="user">User Performance</TabsTrigger>
-              <TabsTrigger value="logs">Call Logs</TabsTrigger>
-              <TabsTrigger value="time">Time Analytics</TabsTrigger>
-              <TabsTrigger value="hourly">Hourly Pattern</TabsTrigger>
-              <TabsTrigger value="productivity">Agent Productivity</TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto pb-1">
+              <TabsList className="inline-flex h-9 gap-1 w-max min-w-full">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="user">Per user</TabsTrigger>
+                <TabsTrigger value="logs">Call logs</TabsTrigger>
+                <TabsTrigger value="time">Trends</TabsTrigger>
+                <TabsTrigger value="hourly">Hourly</TabsTrigger>
+                <TabsTrigger value="productivity">Productivity</TabsTrigger>
+                <TabsTrigger value="activity">Activity</TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="overview">
               <div className="grid gap-4 xl:grid-cols-3">
-                <Card className="border-border/70 xl:col-span-2">
-                  <CardHeader>
-                    <CardTitle className="text-base">Calls vs Connected Trend</CardTitle>
-                    <CardDescription>Daily momentum of activity and outcomes.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {callActivityReport.byCalendar.slice(-10).map((entry) => {
-                        const total = Math.max(entry.totalCalls, 1);
-                        const connectedWidth = `${Math.round((entry.connectedCalls / total) * 100)}%`;
-                        return (
-                          <div key={`trend-${entry.date}`}> 
-                            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                              <span>{format(new Date(entry.date), 'dd MMM')}</span>
-                              <span>{entry.connectedCalls}/{entry.totalCalls}</span>
-                            </div>
-                            <div className="h-2 rounded-full bg-muted">
-                              <div className="h-2 rounded-full bg-primary" style={{ width: connectedWidth }} />
-                            </div>
-                          </div>
-                        );
-                      })}
+                <div className="xl:col-span-2 rounded-xl border border-slate-100 bg-white p-5">
+                  <p className="mb-1 text-sm font-semibold text-slate-900">Calls vs connected</p>
+                  <p className="mb-4 text-xs text-slate-400">Daily volume over selected period</p>
+                  {callActivityReport.byCalendar.length === 0 ? (
+                    <div className="flex h-48 flex-col items-center justify-center gap-2">
+                      <Phone className="h-8 w-8 text-slate-200" />
+                      <p className="text-sm text-slate-400">No calls in this period — try extending the range.</p>
                     </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/70">
-                  <CardHeader>
-                    <CardTitle className="text-base">Duration Trend</CardTitle>
-                    <CardDescription>Talk time volume by day.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {callActivityReport.byCalendar.slice(-10).map((entry) => {
-                        const maxDuration = Math.max(...callActivityReport.byCalendar.map((item) => item.durationSeconds), 1);
-                        const durationWidth = `${Math.round((entry.durationSeconds / maxDuration) * 100)}%`;
-                        return (
-                          <div key={`duration-${entry.date}`}>
-                            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                              <span>{format(new Date(entry.date), 'dd MMM')}</span>
-                              <span>{formatCallDuration(entry.durationSeconds)}</span>
-                            </div>
-                            <div className="h-2 rounded-full bg-muted">
-                              <div className="h-2 rounded-full bg-emerald-500" style={{ width: durationWidth }} />
-                            </div>
-                          </div>
-                        );
-                      })}
+                  ) : (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={callActivityReport.byCalendar} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="analytTotalGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
+                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                          </linearGradient>
+                          <linearGradient id="analytConnGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.15} />
+                            <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="date" tickFormatter={(d) => format(new Date(d), 'MMM d')} tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                        <RechartsTooltip />
+                        <Area type="monotone" dataKey="totalCalls" name="Total" stroke="#6366f1" fill="url(#analytTotalGrad)" strokeWidth={2} />
+                        <Area type="monotone" dataKey="connectedCalls" name="Connected" stroke="#22c55e" fill="url(#analytConnGrad)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-slate-100 bg-white p-5">
+                  <p className="mb-1 text-sm font-semibold text-slate-900">Talk time trend</p>
+                  <p className="mb-4 text-xs text-slate-400">Daily total duration</p>
+                  {callActivityReport.byCalendar.length === 0 ? (
+                    <div className="flex h-48 flex-col items-center justify-center gap-2">
+                      <PhoneCall className="h-8 w-8 text-slate-200" />
+                      <p className="text-sm text-slate-400">No data in selected range.</p>
                     </div>
-                  </CardContent>
-                </Card>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={callActivityReport.byCalendar} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="analytDurGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.15} />
+                            <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="date" tickFormatter={(d) => format(new Date(d), 'MMM d')} tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                        <RechartsTooltip formatter={(v: number) => [formatCallDuration(v), 'Duration']} />
+                        <Area type="monotone" dataKey="durationSeconds" name="Duration (s)" stroke="#22d3ee" fill="url(#analytDurGrad)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
               </div>
-              <div className="grid gap-4 xl:grid-cols-3">
-                <Card className="border-border/70">
-                  <CardHeader>
-                    <CardTitle className="text-base">Outbound Leaders</CardTitle>
-                    <CardDescription>Top outbound callers by volume.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {callActivityReport.topOutboundUsers.map((entry, index) => (
-                      <div key={`outbound-${entry.user}`} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
-                        <span className="font-medium">#{index + 1} {entry.user}</span>
-                        <Badge variant="secondary">{entry.outgoingCalls}</Badge>
-                      </div>
-                    ))}
-                    {callActivityReport.topOutboundUsers.length === 0 && (
-                      <p className="text-sm text-muted-foreground">No outbound activity yet.</p>
-                    )}
-                  </CardContent>
-                </Card>
-                <Card className="border-border/70">
-                  <CardHeader>
-                    <CardTitle className="text-base">Inbound Leaders</CardTitle>
-                    <CardDescription>Top inbound callers by volume.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {callActivityReport.topInboundUsers.map((entry, index) => (
-                      <div key={`inbound-${entry.user}`} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
-                        <span className="font-medium">#{index + 1} {entry.user}</span>
-                        <Badge variant="secondary">{entry.incomingCalls}</Badge>
-                      </div>
-                    ))}
-                    {callActivityReport.topInboundUsers.length === 0 && (
-                      <p className="text-sm text-muted-foreground">No inbound activity yet.</p>
-                    )}
-                  </CardContent>
-                </Card>
-                <Card className="border-border/70">
-                  <CardHeader>
-                    <CardTitle className="text-base">Talk Time Leaders</CardTitle>
-                    <CardDescription>Users with the highest total call duration.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {callActivityReport.topDurationUsers.map((entry, index) => (
-                      <div key={`duration-${entry.user}`} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
-                        <span className="font-medium">#{index + 1} {entry.user}</span>
-                        <span className="text-slate-700">{formatCallDuration(entry.durationSeconds)}</span>
-                      </div>
-                    ))}
-                    {callActivityReport.topDurationUsers.length === 0 && (
-                      <p className="text-sm text-muted-foreground">No duration data yet.</p>
-                    )}
-                  </CardContent>
-                </Card>
+
+              <div className="grid gap-4 xl:grid-cols-3 mt-4">
+                <div className="rounded-xl border border-slate-100 bg-white p-5">
+                  <p className="mb-3 text-sm font-semibold text-slate-900">Outbound leaders</p>
+                  {callActivityReport.topOutboundUsers.length === 0 ? (
+                    <p className="text-sm text-slate-400">No outbound activity yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {callActivityReport.topOutboundUsers.map((entry, index) => {
+                        const initials = getInitials(entry.user, entry.user);
+                        const avatarColor = getAvatarColor(entry.user);
+                        return (
+                          <div key={entry.user} className="flex items-center gap-2 rounded-lg border border-slate-50 bg-slate-50 px-3 py-2">
+                            <div className={`h-7 w-7 shrink-0 rounded-full ${avatarColor} flex items-center justify-center text-xs font-bold text-white`}>
+                              {initials}
+                            </div>
+                            <span className="flex-1 truncate text-sm font-medium text-slate-900">#{index + 1} {entry.user}</span>
+                            <span className="text-sm font-bold text-indigo-600">{entry.outgoingCalls}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-xl border border-slate-100 bg-white p-5">
+                  <p className="mb-3 text-sm font-semibold text-slate-900">Inbound leaders</p>
+                  {callActivityReport.topInboundUsers.length === 0 ? (
+                    <p className="text-sm text-slate-400">No inbound activity yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {callActivityReport.topInboundUsers.map((entry, index) => {
+                        const initials = getInitials(entry.user, entry.user);
+                        const avatarColor = getAvatarColor(entry.user);
+                        return (
+                          <div key={entry.user} className="flex items-center gap-2 rounded-lg border border-slate-50 bg-slate-50 px-3 py-2">
+                            <div className={`h-7 w-7 shrink-0 rounded-full ${avatarColor} flex items-center justify-center text-xs font-bold text-white`}>
+                              {initials}
+                            </div>
+                            <span className="flex-1 truncate text-sm font-medium text-slate-900">#{index + 1} {entry.user}</span>
+                            <span className="text-sm font-bold text-emerald-600">{entry.incomingCalls}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </TabsContent>
 
@@ -1926,7 +2135,13 @@ const AdminDashboard = () => {
                           <TableCell>{format(new Date(entry.created_at), 'dd MMM yyyy, h:mm a')}</TableCell>
                           <TableCell>{entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System'}</TableCell>
                           <TableCell>{entry.lead_id ? leadMap.get(entry.lead_id)?.name || entry.contact_name || entry.phone : entry.contact_name || entry.phone}</TableCell>
-                          <TableCell><Badge variant="secondary">{entry.type}</Badge></TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
+                              entry.type === 'outgoing' ? 'bg-indigo-100 text-indigo-700' :
+                              entry.type === 'incoming' ? 'bg-emerald-100 text-emerald-700' :
+                              'bg-rose-100 text-rose-700'
+                            }`}>{entry.type || 'unknown'}</span>
+                          </TableCell>
                           <TableCell>{formatCallDuration(entry.duration || 0)}</TableCell>
                           <TableCell>{entry.outcome || '-'}</TableCell>
                         </TableRow>
@@ -2116,14 +2331,14 @@ const AdminDashboard = () => {
                 {/* Stat cards */}
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {[
-                    { label: 'TOTAL CALLS', value: callActivityReport.totals.totalCalls.toString(), sub: '100% of activity', color: 'text-indigo-600', bg: 'bg-indigo-50' },
-                    { label: 'CONNECTED', value: callActivityReport.totals.totalConnectedCalls.toString(), sub: `${callActivityReport.totals.answerRate}% success rate`, color: 'text-green-600', bg: 'bg-green-50' },
-                    { label: 'TOTAL TALK TIME', value: formatCallDuration(callActivityReport.totals.totalDurationSeconds), sub: 'Combined duration', color: 'text-cyan-600', bg: 'bg-cyan-50' },
-                    { label: 'AVG DURATION', value: formatCallDuration(callActivityReport.totals.totalConnectedCalls > 0 ? Math.round(callActivityReport.totals.totalDurationSeconds / callActivityReport.totals.totalConnectedCalls) : 0), sub: 'Per connected call', color: 'text-violet-600', bg: 'bg-violet-50' },
+                    { label: 'Total calls', value: callActivityReport.totals.totalCalls.toString(), sub: '100% of activity', color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                    { label: 'Connected', value: callActivityReport.totals.totalConnectedCalls.toString(), sub: `${callActivityReport.totals.answerRate}% success rate`, color: 'text-green-600', bg: 'bg-green-50' },
+                    { label: 'Total talk time', value: formatCallDuration(callActivityReport.totals.totalDurationSeconds), sub: 'Combined duration', color: 'text-cyan-600', bg: 'bg-cyan-50' },
+                    { label: 'Avg duration', value: formatCallDuration(callActivityReport.totals.totalConnectedCalls > 0 ? Math.round(callActivityReport.totals.totalDurationSeconds / callActivityReport.totals.totalConnectedCalls) : 0), sub: 'Per connected call', color: 'text-violet-600', bg: 'bg-violet-50' },
                   ].map((s) => (
                     <Card key={s.label} className={`border-border/60 ${s.bg}`}>
                       <CardContent className="p-4">
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{s.label}</p>
+                        <p className="text-xs font-medium text-slate-500">{s.label}</p>
                         <p className={`mt-2 text-xl font-bold ${s.color}`}>{s.value}</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">{s.sub}</p>
                       </CardContent>
@@ -2217,247 +2432,83 @@ const AdminDashboard = () => {
                 </div>
               </div>
             </TabsContent>
+
+            <TabsContent value="activity">
+              <div className="rounded-xl border border-slate-100 bg-white">
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
+                  <Input
+                    className="h-8 max-w-xs text-sm"
+                    placeholder="Search activity or lead..."
+                    value={activitySearch}
+                    onChange={(e) => setActivitySearch(e.target.value)}
+                  />
+                  <Select value={activityTypeFilter} onValueChange={setActivityTypeFilter}>
+                    <SelectTrigger className="h-8 w-32 text-xs">
+                      <SelectValue placeholder="All types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All types</SelectItem>
+                      <SelectItem value="call">Call</SelectItem>
+                      <SelectItem value="email">Email</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="overflow-hidden rounded-b-xl">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Activity</TableHead>
+                        <TableHead>Lead</TableHead>
+                        <TableHead>User</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredActivities.map((entry) => {
+                        const userName = entry.user_id
+                          ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User'
+                          : 'System';
+                        const initials = getInitials(
+                          entry.user_id ? userMap.get(entry.user_id)?.full_name || null : null,
+                          entry.user_id ? userMap.get(entry.user_id)?.email || 'sys' : 'sys',
+                        );
+                        const avatarColor = getAvatarColor(entry.user_id || 'system');
+                        return (
+                          <TableRow key={entry.id}>
+                            <TableCell className="text-xs text-slate-500 whitespace-nowrap">{format(new Date(entry.created_at), 'MMM d, h:mm a')}</TableCell>
+                            <TableCell>
+                              <p className="text-sm font-medium text-slate-900">{entry.title}</p>
+                              {entry.description && <p className="text-xs text-slate-400">{entry.description}</p>}
+                            </TableCell>
+                            <TableCell className="text-sm text-slate-600">{entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A'}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div className={`h-6 w-6 shrink-0 rounded-full ${avatarColor} flex items-center justify-center text-xs font-bold text-white`}>
+                                  {initials}
+                                </div>
+                                <span className="text-sm text-slate-700">{userName}</span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      {filteredActivities.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="py-12 text-center text-sm text-slate-400">No activities found.</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
     </div>
-  );
+    );
+  };
 
-  const renderMarketplace = () => (
-    <div className="space-y-4">
-      <Card className="border-border/80 shadow-sm">
-        <CardContent className="space-y-4 pt-4">
-          <div className="rounded-xl border bg-background p-4 shadow-sm">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-sm font-semibold text-foreground">Zoho CRM</p>
-                <p className="text-xs text-muted-foreground">Push lead activities and tasks from MobileCRM to Zoho CRM records.</p>
-              </div>
-              {zohoStatus?.connected ? <Badge className="bg-emerald-600 text-white">Connected</Badge> : <Badge variant="secondary">Not Connected</Badge>}
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Zoho API Domain</Label>
-                <Input
-                  value={zohoConnector.apiDomain}
-                  onChange={(event) => setZohoConnector((prev) => ({ ...prev, apiDomain: event.target.value.trim() }))}
-                  placeholder="https://www.zohoapis.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Zoho Accounts Server</Label>
-                <Input
-                  value={zohoConnector.accountsServer}
-                  onChange={(event) => setZohoConnector((prev) => ({ ...prev, accountsServer: event.target.value.trim() }))}
-                  placeholder="https://accounts.zoho.com"
-                />
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Required scopes: ZohoCRM.modules.tasks.CREATE, ZohoCRM.modules.calls.CREATE, ZohoCRM.modules.leads.READ, ZohoSearch.securesearch.READ
-            </p>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                onClick={handleConnectZoho}
-                disabled={zohoAuthorizeMutation.isPending || zohoStatusLoading}
-              >
-                {zohoAuthorizeMutation.isPending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
-                {zohoStatus?.connected ? 'Reconnect Zoho CRM' : 'Connect Zoho CRM'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => zohoDisconnectMutation.mutate()}
-                disabled={!zohoStatus?.connected || zohoDisconnectMutation.isPending}
-              >
-                {zohoDisconnectMutation.isPending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Disconnect
-              </Button>
-            </div>
-
-            {zohoStatus?.connected && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Connected. Token expiry: {zohoStatus.expiresAt ? format(new Date(zohoStatus.expiresAt), 'dd MMM yyyy, h:mm a') : 'managed automatically'}
-              </p>
-            )}
-          </div>
-
-          <div className="rounded-xl border bg-muted/20 p-4">
-            <p className="text-sm font-medium text-foreground">How this works (Zoho Integration)</p>
-            <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
-              <p>1. Click Connect Zoho CRM and complete OAuth in the popup.</p>
-              <p>2. OAuth tokens are stored securely on the server, not in the browser.</p>
-              <p>3. During sync, MobileCRM matches each record to a Zoho lead by email, then phone, then name.</p>
-              <p>4. Matched records are pushed to Zoho: tasks go to Tasks, call activities go to Calls.</p>
-              <p>5. The sync summary reports pushed vs failed records, and skipped lead matches.</p>
-            </div>
-          </div>
-
-          <div className="rounded-xl border bg-muted/20 p-4">
-            <p className="text-sm font-medium text-foreground">Sync Actions</p>
-            <p className="mb-3 text-xs text-muted-foreground">Push records against matched Zoho leads (matched by email, then phone, then name).</p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                onClick={() => {
-                  setZohoSyncState((prev) => ({ ...prev, tasks: true }));
-                  zohoSyncMutation.mutate({ mode: 'tasks' });
-                }}
-                disabled={zohoSyncState.tasks || zohoSyncMutation.isPending || !zohoStatus?.connected}
-              >
-                {zohoSyncState.tasks ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <SendHorizontal className="mr-2 h-4 w-4" />}
-                Push Tasks to Zoho
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setZohoSyncState((prev) => ({ ...prev, activities: true }));
-                  zohoSyncMutation.mutate({ mode: 'activities' });
-                }}
-                disabled={zohoSyncState.activities || zohoSyncMutation.isPending || !zohoStatus?.connected}
-              >
-                {zohoSyncState.activities ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <SendHorizontal className="mr-2 h-4 w-4" />}
-                Push Activities to Zoho
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Card className="border-border/70">
-              <CardHeader>
-                <CardTitle className="text-base">Integration Health</CardTitle>
-                <CardDescription>Current CRM connector status and token lifecycle.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <span>Connection</span>
-                  <Badge variant={zohoStatus?.connected ? 'default' : 'secondary'}>{zohoStatus?.connected ? 'Connected' : 'Disconnected'}</Badge>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <span>API Domain</span>
-                  <span className="truncate text-muted-foreground">{zohoConnector.apiDomain}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <span>Accounts Server</span>
-                  <span className="truncate text-muted-foreground">{zohoConnector.accountsServer}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <span>Token Expires</span>
-                  <span className="text-muted-foreground">{zohoStatus?.expiresAt ? format(new Date(zohoStatus.expiresAt), 'dd MMM yyyy, h:mm a') : 'Managed by server'}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/70">
-              <CardHeader>
-                <CardTitle className="text-base">Recent Sync Runs</CardTitle>
-                <CardDescription>Last 20 manual sync operations with outcomes.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="max-h-[260px] overflow-auto space-y-2">
-                  {syncLogs.map((log) => (
-                    <div key={log.id} className="rounded-lg border px-3 py-2 text-sm">
-                      <div className="mb-1 flex items-center justify-between">
-                        <span className="font-medium">{log.mode}</span>
-                        <Badge variant={log.status === 'error' ? 'destructive' : log.status === 'warning' ? 'secondary' : 'default'}>{log.status}</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{format(new Date(log.time), 'dd MMM yyyy, h:mm:ss a')}</p>
-                      <p className="text-xs text-muted-foreground">Success: {log.success} | Failed: {log.failed}</p>
-                    </div>
-                  ))}
-                  {syncLogs.length === 0 && (
-                    <p className="rounded-lg border p-3 text-sm text-muted-foreground">No sync logs yet. Trigger a push action to populate run history.</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-
-  const renderActivity = () => (
-    <div className="space-y-4">
-      <div className="sticky top-0 bg-background z-10 px-4 pt-6 pb-4 border-b border-border/60">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Activity</h1>
-            <p className="text-sm text-muted-foreground">{filteredActivities.length} total activities logged</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Input
-            placeholder="Search activity, lead, or user"
-            value={activitySearch}
-            onChange={(e) => setActivitySearch(e.target.value)}
-          />
-          <Select value={activityTypeFilter} onValueChange={setActivityTypeFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All Types" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="call">Call</SelectItem>
-              <SelectItem value="email">Email</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={activityUserFilter} onValueChange={setActivityUserFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All Users" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Users</SelectItem>
-              <SelectItem value="system">System</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setActivitySearch('');
-              setActivityTypeFilter('all');
-              setActivityUserFilter('all');
-            }}
-          >
-            <Filter className="mr-2 h-4 w-4" />
-            Clear
-          </Button>
-        </div>
-      </div>
-      <div className="overflow-hidden rounded-xl border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Time</TableHead>
-              <TableHead>Activity</TableHead>
-              <TableHead>Lead</TableHead>
-              <TableHead>User</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredActivities.map((entry) => (
-              <TableRow key={entry.id}>
-                <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy h:mm a')}</TableCell>
-                <TableCell>
-                  <p className="text-sm font-medium">{entry.title}</p>
-                  {entry.description && <p className="text-xs text-muted-foreground">{entry.description}</p>}
-                </TableCell>
-                <TableCell>{entry.lead_id ? leadMap.get(entry.lead_id)?.name || 'Lead' : 'N/A'}</TableCell>
-                <TableCell>
-                  {entry.user_id ? userMap.get(entry.user_id)?.full_name || userMap.get(entry.user_id)?.email || 'User' : 'System'}
-                </TableCell>
-              </TableRow>
-            ))}
-            {filteredActivities.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">No activities found.</TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
-  );
 
   const renderLeads = () => (
     <div className="space-y-4">
@@ -2761,11 +2812,11 @@ const AdminDashboard = () => {
           </CardContent>
         </Card>
       ) : null}
-      {renderTeam()}
+      {renderTeamMembers()}
     </div>
   );
 
-  const renderTeam = () => {
+  const renderTeamMembers = () => {
     if (!currentTenant) {
       return (
         <Card className="border-amber-200 bg-amber-50">
@@ -2879,240 +2930,434 @@ const AdminDashboard = () => {
     );
   };
 
-  const renderSettings = () => (
-    <div className="space-y-4">
-      <Card className="border-border/80 shadow-sm">
-          <CardContent className="pt-4">
-            <div className="mb-4 flex flex-row items-center justify-between">
-              <div>
-                <h3 className="font-semibold">User Settings</h3>
-                <p className="text-sm text-muted-foreground">Create, edit, and manage role/access for sales users.</p>
+  const renderTeam = () => (
+    <div className="space-y-5 pb-8">
+      {/* Header with invite button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-medium text-slate-500">{users.length} {users.length === 1 ? 'user' : 'users'}</p>
+        </div>
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Plus className="mr-2 h-4 w-4" />
+              Invite user
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Invite User</DialogTitle>
+              <DialogDescription>Send a signup link to the user's email. They'll set their own password.</DialogDescription>
+            </DialogHeader>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                createUser.mutate(newUserData);
+              }}
+              className="space-y-3"
+            >
+              <div className="space-y-2">
+                <Label>Full Name</Label>
+                <Input
+                  value={newUserData.fullName}
+                  onChange={(event) => setNewUserData((prev) => ({ ...prev, fullName: event.target.value }))}
+                  required
+                />
               </div>
-              <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add User
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Invite User</DialogTitle>
-                  <DialogDescription>Send a signup link to the user's email. They'll set their own password.</DialogDescription>
-                </DialogHeader>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    createUser.mutate(newUserData);
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={newUserData.email}
+                  onChange={(event) => setNewUserData((prev) => ({ ...prev, email: event.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select
+                  value={newUserData.role}
+                  onValueChange={(value: 'super_admin' | 'admin' | 'sales') => setNewUserData((prev) => ({ ...prev, role: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sales">Sales</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    {isSuperAdmin ? <SelectItem value="super_admin">Super Admin</SelectItem> : null}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" className="w-full" disabled={createUser.isPending}>
+                {createUser.isPending ? 'Sending Invite...' : 'Send Invite'}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Bulk action bar */}
+      {selectedUserIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-xl">
+            <span className="text-sm font-medium text-slate-700">{selectedUserIds.length} selected</span>
+            <div className="h-4 w-px bg-slate-200" />
+            <Button size="sm" variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50" disabled={bulkActivateUsers.isPending} onClick={() => bulkActivateUsers.mutate(selectedUserIds)}>
+              <UserCheck className="mr-1.5 h-3.5 w-3.5" />
+              Activate
+            </Button>
+            <Button size="sm" variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-50" disabled={bulkDeactivateUsers.isPending} onClick={() => bulkDeactivateUsers.mutate(selectedUserIds.filter(id => id !== user?.id))}>
+              <UserX className="mr-1.5 h-3.5 w-3.5" />
+              Deactivate
+            </Button>
+            <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => setSelectedUserIds([])}>
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* User table */}
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-slate-50">
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 cursor-pointer rounded"
+                  checked={paginatedUsers.length > 0 && paginatedUsers.every(u => selectedUserIds.includes(u.id))}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedUserIds(prev => Array.from(new Set([...prev, ...paginatedUsers.map(u => u.id)])));
+                    } else {
+                      setSelectedUserIds(prev => prev.filter(id => !paginatedUsers.map(u => u.id).includes(id)));
+                    }
                   }}
-                  className="space-y-3"
-                >
-                  <div className="space-y-2">
-                    <Label>Full Name</Label>
-                    <Input
-                      value={newUserData.fullName}
-                      onChange={(event) => setNewUserData((prev) => ({ ...prev, fullName: event.target.value }))}
-                      required
+                />
+              </TableHead>
+              <TableHead>User</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Joined</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {paginatedUsers.map((u) => {
+              const initials = getInitials(u.full_name, u.email);
+              const avatarColor = getAvatarColor(u.id);
+              return (
+                <TableRow key={u.id} className="group hover:bg-slate-50">
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 cursor-pointer rounded"
+                      checked={selectedUserIds.includes(u.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedUserIds(prev => [...prev, u.id]);
+                        else setSelectedUserIds(prev => prev.filter(id => id !== u.id));
+                      }}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Email</Label>
-                    <Input
-                      type="email"
-                      value={newUserData.email}
-                      onChange={(event) => setNewUserData((prev) => ({ ...prev, email: event.target.value }))}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Role</Label>
-                    <Select
-                      value={newUserData.role}
-                      onValueChange={(value: 'super_admin' | 'admin' | 'sales') => setNewUserData((prev) => ({ ...prev, role: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="sales">Sales</SelectItem>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        {isSuperAdmin ? <SelectItem value="super_admin">Super Admin</SelectItem> : null}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button type="submit" className="w-full" disabled={createUser.isPending}>
-                    {createUser.isPending ? 'Sending Invite...' : 'Send Invite'}
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-            </div>
-            {selectedUserIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2">
-                <Badge variant="secondary">{selectedUserIds.length} selected</Badge>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-green-500 text-green-600"
-                  disabled={bulkActivateUsers.isPending}
-                  onClick={() => bulkActivateUsers.mutate(selectedUserIds)}
-                >
-                  <UserCheck className="mr-1 h-3 w-3" />
-                  Activate
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-amber-500 text-amber-600"
-                  disabled={bulkDeactivateUsers.isPending}
-                  onClick={() => bulkDeactivateUsers.mutate(selectedUserIds.filter((id) => id !== user?.id))}
-                >
-                  <UserX className="mr-1 h-3 w-3" />
-                  Deactivate
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setSelectedUserIds([])}>Clear</Button>
-              </div>
-            )}
-            <div className="overflow-hidden rounded-xl border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[40px]">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 cursor-pointer"
-                        checked={paginatedUsers.length > 0 && selectedUserIds.length >= paginatedUsers.length && paginatedUsers.every((u) => selectedUserIds.includes(u.id))}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedUserIds((prev) => Array.from(new Set([...prev, ...paginatedUsers.map((u) => u.id)])));
-                          } else {
-                            setSelectedUserIds((prev) => prev.filter((id) => !paginatedUsers.map((u) => u.id).includes(id)));
-                          }
-                        }}
-                      />
-                    </TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedUsers.map((entry) => (
-                    <TableRow key={entry.id} className={selectedUserIds.includes(entry.id) ? 'bg-muted/30' : ''}>
-                      <TableCell>
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 cursor-pointer"
-                          checked={selectedUserIds.includes(entry.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedUserIds((prev) => [...prev, entry.id]);
-                            } else {
-                              setSelectedUserIds((prev) => prev.filter((id) => id !== entry.id));
-                            }
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell className="font-medium">{entry.full_name || 'No name'}</TableCell>
-                      <TableCell className="text-muted-foreground">{entry.email}</TableCell>
-                      <TableCell>
-                        <Badge variant={entry.role === 'super_admin' ? 'default' : entry.role === 'admin' ? 'default' : 'secondary'}>
-                          {entry.role || 'No role'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {entry.is_active ? (
-                          <Badge variant="outline" className="border-green-500 text-green-600">
-                            <UserCheck className="mr-1 h-3 w-3" />
-                            Active
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="border-red-500 text-red-600">
-                            <UserX className="mr-1 h-3 w-3" />
-                            Inactive
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>{format(new Date(entry.created_at), 'MMM d, yyyy')}</TableCell>
-                      <TableCell>
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => handleEditUser(entry)}>
-                            <Pencil className="mr-1 h-3 w-3" />
-                            Edit
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <div className={`h-8 w-8 shrink-0 rounded-full ${avatarColor} flex items-center justify-center text-xs font-bold text-white`}>
+                        {initials}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{u.full_name || '—'}</p>
+                        <p className="text-xs text-slate-400">{u.email}</p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
+                      u.role === 'super_admin' ? 'bg-violet-100 text-violet-700' :
+                      u.role === 'admin' ? 'bg-blue-100 text-blue-700' :
+                      'bg-slate-100 text-slate-600'
+                    }`}>
+                      {u.role === 'super_admin' ? 'Super admin' : u.role === 'admin' ? 'Admin' : 'Sales'}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${u.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${u.is_active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                      {u.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-xs text-slate-400">{format(new Date(u.created_at), 'MMM d, yyyy')}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => handleEditUser(u)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
+                            <Trash2 className="h-3.5 w-3.5 text-slate-400" />
                           </Button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-destructive/40 text-destructive"
-                                disabled={entry.id === user?.id}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-44">
-                              <DropdownMenuLabel>User actions</DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => setDeleteConfirm({ userId: entry.id, email: entry.email, mode: 'deactivate' })}
-                              >
-                                <UserX className="mr-2 h-4 w-4" />
-                                Deactivate
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                onClick={() => setDeleteConfirm({ userId: entry.id, email: entry.email, mode: 'delete' })}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete Permanently
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {paginatedUsers.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground">
-                        No users found.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setDeleteConfirm({ userId: u.id, email: u.email, mode: 'deactivate' })} className="text-amber-600">
+                            <UserX className="mr-2 h-4 w-4" /> Deactivate
+                          </DropdownMenuItem>
+                          {isSuperAdmin && (
+                            <DropdownMenuItem onClick={() => setDeleteConfirm({ userId: u.id, email: u.email, mode: 'delete' })} className="text-rose-600">
+                              <Trash2 className="mr-2 h-4 w-4" /> Delete permanently
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {users.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="py-16 text-center">
+                  <Users className="mx-auto h-10 w-10 text-slate-200" />
+                  <p className="mt-3 text-sm font-medium text-slate-500">No users yet</p>
+                  <p className="mt-1 text-xs text-slate-400">Invite your first team member to get started.</p>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+        {/* Pagination */}
+        {usersPageCount > 1 && (
+          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3">
+            <p className="text-xs text-slate-400">Page {usersPage} of {usersPageCount}</p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" disabled={usersPage <= 1} onClick={() => setUsersPage(p => Math.max(1, p - 1))}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button size="sm" variant="outline" disabled={usersPage >= usersPageCount} onClick={() => setUsersPage(p => Math.min(usersPageCount, p + 1))}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">
-                Showing {(usersPage - 1) * usersPageSize + (paginatedUsers.length > 0 ? 1 : 0)}-
-                {(usersPage - 1) * usersPageSize + paginatedUsers.length} of {users.length}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={usersPage <= 1}
-                  onClick={() => setUsersPage((page) => Math.max(1, page - 1))}
-                >
-                  Previous
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={usersPage >= usersPageCount}
-                  onClick={() => setUsersPage((page) => Math.min(usersPageCount, page + 1))}
-                >
-                  Next
-                </Button>
+          </div>
+        )}
+      </div>
+      {!isSuperAdmin && renderTeamMembers()}
+    </div>
+  );
+
+  const renderSettings = () => (
+    <div className="space-y-4 pb-8">
+      {/* Tenant Settings */}
+      {currentTenant && (
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/20">
+            <div>
+              <CardTitle>Tenant Settings</CardTitle>
+              <CardDescription>Manage organization information and manager assignment.</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setIsEditingTenant(!isEditingTenant)}>
+              <Pencil className="mr-1 h-4 w-4" />
+              {isEditingTenant ? 'Cancel' : 'Edit'}
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-6 pt-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Organization Name</Label>
+                {isEditingTenant ? (
+                  <Input
+                    value={tenantNameEdit}
+                    onChange={(e) => setTenantNameEdit(e.target.value)}
+                    placeholder="Enter organization name"
+                  />
+                ) : (
+                  <p className="rounded-lg bg-muted px-3 py-2 text-sm">{currentTenant.name}</p>
+                )}
               </div>
+              <div className="space-y-2">
+                <Label>Slug</Label>
+                <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">{currentTenant.slug}</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Tenant ID</Label>
+                <p className="rounded-lg bg-muted px-3 py-2 text-sm">{currentTenant.tenant_code}</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Badge className="w-fit" variant={currentTenant.active ? 'default' : 'destructive'}>
+                  {currentTenant.active ? 'Active' : 'Inactive'}
+                </Badge>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Tenant Manager</Label>
+                <Select
+                  value={currentTenantManager?.user_id || ''}
+                  onValueChange={async (value) => {
+                    try {
+                      await setTenantManager(currentTenant.id, value);
+                      toast({ title: 'Manager updated', description: 'Tenant manager has been updated.' });
+                    } catch (error: any) {
+                      toast({ title: 'Error', description: error.message || 'Failed to update tenant manager', variant: 'destructive' });
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Assign manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users
+                      .filter((entry) => entry.is_active && entry.role === 'admin')
+                      .map((entry) => (
+                        <SelectItem key={entry.id} value={entry.id}>
+                          {entry.full_name || entry.email} ({entry.email})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 border-t pt-4">
+              {isEditingTenant && (
+                <Button
+                  onClick={async () => {
+                    try {
+                      await updateTenant(currentTenant.id, { name: tenantNameEdit });
+                      setIsEditingTenant(false);
+                      toast({ title: 'Success', description: 'Tenant updated successfully' });
+                    } catch (error) {
+                      toast({ title: 'Error', description: 'Failed to update tenant', variant: 'destructive' });
+                    }
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Check className="mr-1 h-4 w-4" />
+                  Save Changes
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                disabled={!currentTenantManager}
+                onClick={async () => {
+                  try {
+                    await removeTenantManager(currentTenant.id);
+                    toast({ title: 'Manager removed', description: 'Tenant manager has been removed.' });
+                  } catch (error: any) {
+                    toast({ title: 'Error', description: error.message || 'Failed to remove tenant manager', variant: 'destructive' });
+                  }
+                }}
+              >
+                Remove Manager
+              </Button>
             </div>
           </CardContent>
         </Card>
-      {!isSuperAdmin && renderTeam()}
+      )}
+
+      {/* Zoho CRM Integration */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Zoho CRM integration</p>
+            <p className="text-xs text-slate-400">Sync tasks and activities to Zoho CRM.</p>
+          </div>
+          {zohoStatus?.connected
+            ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Connected</span>
+            : <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Not connected</span>
+          }
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Zoho API Domain</Label>
+            <Input
+              value={zohoConnector.apiDomain}
+              onChange={(event) => setZohoConnector((prev) => ({ ...prev, apiDomain: event.target.value.trim() }))}
+              placeholder="https://www.zohoapis.com"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Zoho Accounts Server</Label>
+            <Input
+              value={zohoConnector.accountsServer}
+              onChange={(event) => setZohoConnector((prev) => ({ ...prev, accountsServer: event.target.value.trim() }))}
+              placeholder="https://accounts.zoho.com"
+            />
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Required scopes: ZohoCRM.modules.tasks.CREATE, ZohoCRM.modules.calls.CREATE, ZohoCRM.modules.leads.READ, ZohoSearch.securesearch.READ
+        </p>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            onClick={handleConnectZoho}
+            disabled={zohoAuthorizeMutation.isPending || zohoStatusLoading}
+          >
+            {zohoAuthorizeMutation.isPending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+            {zohoStatus?.connected ? 'Reconnect Zoho CRM' : 'Connect Zoho CRM'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => zohoDisconnectMutation.mutate()}
+            disabled={!zohoStatus?.connected || zohoDisconnectMutation.isPending}
+          >
+            {zohoDisconnectMutation.isPending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Disconnect
+          </Button>
+        </div>
+
+        {zohoStatus?.connected && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Connected. Token expiry: {zohoStatus.expiresAt ? format(new Date(zohoStatus.expiresAt), 'dd MMM yyyy, h:mm a') : 'managed automatically'}
+          </p>
+        )}
+
+        <div className="mt-4 rounded-xl border bg-muted/20 p-4">
+          <p className="text-sm font-medium text-foreground">Sync Actions</p>
+          <p className="mb-3 text-xs text-muted-foreground">Push records against matched Zoho leads (matched by email, then phone, then name).</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => {
+                setZohoSyncState((prev) => ({ ...prev, tasks: true }));
+                zohoSyncMutation.mutate({ mode: 'tasks' });
+              }}
+              disabled={zohoSyncState.tasks || zohoSyncMutation.isPending || !zohoStatus?.connected}
+            >
+              {zohoSyncState.tasks ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <SendHorizontal className="mr-2 h-4 w-4" />}
+              Push Tasks to Zoho
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setZohoSyncState((prev) => ({ ...prev, activities: true }));
+                zohoSyncMutation.mutate({ mode: 'activities' });
+              }}
+              disabled={zohoSyncState.activities || zohoSyncMutation.isPending || !zohoStatus?.connected}
+            >
+              {zohoSyncState.activities ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <SendHorizontal className="mr-2 h-4 w-4" />}
+              Push Activities to Zoho
+            </Button>
+          </div>
+        </div>
+
+        {syncLogs.length > 0 && (
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-medium text-slate-500">Recent sync runs</p>
+            <div className="max-h-[200px] overflow-auto space-y-2">
+              {syncLogs.map((log) => (
+                <div key={log.id} className="rounded-lg border px-3 py-2 text-sm">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="font-medium">{log.mode}</span>
+                    <Badge variant={log.status === 'error' ? 'destructive' : log.status === 'warning' ? 'secondary' : 'default'}>{log.status}</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{format(new Date(log.time), 'dd MMM yyyy, h:mm:ss a')}</p>
+                  <p className="text-xs text-muted-foreground">Success: {log.success} | Failed: {log.failed}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -3150,16 +3395,9 @@ const AdminDashboard = () => {
               {!sidebarCollapsed && (
                 <div className="min-w-0">
                   <p className="truncate text-xl font-semibold tracking-tight text-slate-900">Admin Dashboard</p>
-                  <p className="truncate text-xs font-medium uppercase tracking-[0.24em] text-slate-400">Control Center</p>
                 </div>
               )}
             </div>
-
-            {!sidebarCollapsed && (
-              <div className="mb-4 px-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
-                Navigation
-              </div>
-            )}
 
             <nav className="space-y-2">
               {navigationItems.map((item) => {
@@ -3169,16 +3407,13 @@ const AdminDashboard = () => {
                   <button
                     key={item.id}
                     onClick={() => setActiveSection(item.id)}
-                    className={`flex w-full items-center rounded-2xl px-3 py-3 text-left transition ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${isActive ? 'bg-[#2d54b5] text-white shadow-[0_18px_35px_-22px_rgba(37,99,235,0.95)]' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                    className={`flex w-full items-center rounded-xl px-3 py-2.5 text-left transition-all ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${isActive ? 'bg-[#2d54b5] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
                   >
-                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isActive ? 'bg-white/16 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
                       <Icon className="h-4 w-4" />
                     </span>
                     {!sidebarCollapsed && (
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-semibold">{item.label}</span>
-                        <span className={`block truncate text-xs ${isActive ? 'text-white/72' : 'text-slate-400'}`}>{item.caption}</span>
-                      </span>
+                      <span className="text-sm font-medium">{item.label}</span>
                     )}
                   </button>
                 );
@@ -3199,12 +3434,12 @@ const AdminDashboard = () => {
 
           <div className="min-w-0 space-y-4 overflow-hidden p-4 lg:p-5">
             <main className="min-w-0 h-[calc(100vh-env(safe-area-inset-top))] lg:h-[calc(100vh-env(safe-area-inset-top)-32px)] overflow-y-auto pr-0">
+              {activeSection === 'overview' && renderOverview()}
               {activeSection === 'leads' && renderLeads()}
-              {activeSection === 'call-activity' && renderCallActivity()}
-              {activeSection === 'marketplace' && renderMarketplace()}
-              {activeSection === 'activity' && renderActivity()}
-              {activeSection === 'tenants' && renderTenants()}
+              {activeSection === 'analytics' && renderAnalytics()}
+              {activeSection === 'team' && renderTeam()}
               {activeSection === 'settings' && renderSettings()}
+              {activeSection === 'tenants' && renderTenants()}
             </main>
           </div>
         </div>
@@ -3215,43 +3450,43 @@ const AdminDashboard = () => {
         <CommandList>
           <CommandEmpty>No quick actions found.</CommandEmpty>
           <CommandGroup heading="Navigation">
+            <CommandItem onSelect={() => { setActiveSection('overview'); setCommandOpen(false); }}>
+              <LayoutDashboard className="mr-2 h-4 w-4" />
+              Overview
+            </CommandItem>
             <CommandItem onSelect={() => { setActiveSection('leads'); setCommandOpen(false); }}>
               <Users className="mr-2 h-4 w-4" />
-              Manage Leads
+              Leads
             </CommandItem>
-            <CommandItem onSelect={() => { setActiveSection('call-activity'); setCommandOpen(false); }}>
-              <Phone className="mr-2 h-4 w-4" />
-              Reports
-            </CommandItem>
-            <CommandItem onSelect={() => { setActiveSection('activity'); setCommandOpen(false); }}>
+            <CommandItem onSelect={() => { setActiveSection('analytics'); setCommandOpen(false); }}>
               <Activity className="mr-2 h-4 w-4" />
-              Activity
+              Analytics
             </CommandItem>
-            <CommandItem onSelect={() => { setActiveSection('marketplace'); setCommandOpen(false); }}>
-              <Link2 className="mr-2 h-4 w-4" />
-              Integrations
+            <CommandItem onSelect={() => { setActiveSection('team'); setCommandOpen(false); }}>
+              <Users className="mr-2 h-4 w-4" />
+              Team
             </CommandItem>
             <CommandItem onSelect={() => { setActiveSection('settings'); setCommandOpen(false); }}>
               <Settings className="mr-2 h-4 w-4" />
-              Users
+              Settings
             </CommandItem>
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading="Actions">
-            <CommandItem onSelect={() => { setIsCreateDialogOpen(true); setActiveSection('settings'); setCommandOpen(false); }}>
+            <CommandItem onSelect={() => { setIsCreateDialogOpen(true); setActiveSection('team'); setCommandOpen(false); }}>
               <Plus className="mr-2 h-4 w-4" />
-              Create User
+              Invite User
             </CommandItem>
           </CommandGroup>
         </CommandList>
       </CommandDialog>
 
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit User</DialogTitle>
-            <DialogDescription>Update user details and access settings.</DialogDescription>
-          </DialogHeader>
+      <Sheet open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Edit user</SheetTitle>
+            <SheetDescription>Update this user's name, role, and access.</SheetDescription>
+          </SheetHeader>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -3262,7 +3497,7 @@ const AdminDashboard = () => {
                 isActive: editUserData.isActive,
               });
             }}
-            className="space-y-4"
+            className="space-y-4 mt-4"
           >
             <div className="space-y-2">
               <Label>Email</Label>
@@ -3307,8 +3542,8 @@ const AdminDashboard = () => {
               {updateUser.isPending ? 'Saving...' : 'Save Changes'}
             </Button>
           </form>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <AlertDialogContent>
