@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock, AlertCircle, Calendar, User, Plus, X, Edit2 } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTenant } from '@/contexts/TenantContext';
@@ -282,23 +280,16 @@ const TasksPanel = () => {
       {/* Header */}
       <div className="sticky top-0 bg-background z-10 px-4 pt-6 pb-4 border-b border-border/60">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
+          <div>
             <h1 className="text-2xl font-bold text-foreground">Tasks</h1>
-            {statusCounts.pending > 0 && (
-              <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning">
-                {statusCounts.pending} pending
-              </span>
-            )}
+            <p className="text-sm text-muted-foreground">{tasks.length} total tasks</p>
           </div>
           <Sheet open={isTaskSheetOpen} onOpenChange={setIsTaskSheetOpen}>
             <SheetTrigger asChild>
-              <motion.button
-                whileTap={{ scale: 0.92 }}
-                onClick={() => openTaskSheet()}
-                className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-primary/25"
-              >
-                <Plus className="w-5 h-5 text-primary-foreground" />
-              </motion.button>
+              <Button size="sm" variant="outline" className="gap-1" onClick={() => openTaskSheet()}>
+                <Plus className="w-3.5 h-3.5" />
+                Add Task
+              </Button>
             </SheetTrigger>
             <SheetContent side="bottom" className="h-[85%] bg-background rounded-t-3xl">
               <SheetHeader>
@@ -408,22 +399,8 @@ const TasksPanel = () => {
       {/* Task Lists */}
       <div className="px-4 space-y-6">
         {isLoading ? (
-          <div className="space-y-3 pt-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="glass-card p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-40" />
-                    <Skeleton className="h-3 w-28" />
-                    <Skeleton className="h-3 w-24" />
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <Skeleton className="h-7 w-20 rounded-md" />
-                    <Skeleton className="h-8 w-8 rounded-lg" />
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Loading tasks...</p>
           </div>
         ) : filteredTasks.length === 0 ? (
           <div className="text-center py-12">

@@ -1,12 +1,11 @@
 import { useDeferredValue, useState } from 'react';
-import { Search, Plus, Phone, MessageCircle, Building2, IndianRupee } from 'lucide-react';
+import { Search, Plus, Phone, Edit2, Trash2, MessageCircle, Building2, IndianRupee } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useLeads, Lead, LeadStatus } from '@/hooks/useLeads';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -198,56 +197,62 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
               <SheetHeader>
                 <SheetTitle>{editingLead ? 'Edit Lead' : 'Add New Lead'}</SheetTitle>
               </SheetHeader>
-              <div className="space-y-4 mt-6 overflow-y-auto">
-                <div>
-                  <Label>Name *</Label>
-                  <Input
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="John Doe"
-                  />
+              <div className="space-y-4 mt-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Name *</Label>
+                    <Input
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="John Doe"
+                    />
+                  </div>
+                  <div>
+                    <Label>Company</Label>
+                    <Input
+                      value={formData.company}
+                      onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                      placeholder="Acme Inc"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <Label>Company</Label>
-                  <Input
-                    value={formData.company}
-                    onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                    placeholder="Acme Inc"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Phone *</Label>
+                    <Input
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="+1 555 123 4567"
+                    />
+                  </div>
+                  <div>
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="john@acme.com"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <Label>Phone *</Label>
-                  <Input
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="+91 98765 43210"
-                  />
-                </div>
-                <div>
-                  <Label>Email</Label>
-                  <Input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="john@acme.com"
-                  />
-                </div>
-                <div>
-                  <Label>Source</Label>
-                  <Input
-                    value={formData.source}
-                    onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                    placeholder="Website, Referral..."
-                  />
-                </div>
-                <div>
-                  <Label>Value (₹)</Label>
-                  <Input
-                    type="number"
-                    value={formData.value}
-                    onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                    placeholder="50000"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Source</Label>
+                    <Input
+                      value={formData.source}
+                      onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+                      placeholder="Website, Referral..."
+                    />
+                  </div>
+                  <div>
+                    <Label>Deal Value ($)</Label>
+                    <Input
+                      type="number"
+                      value={formData.value}
+                      onChange={(e) => setFormData({ ...formData, value: e.target.value })}
+                      placeholder="5000"
+                    />
+                  </div>
                 </div>
                 <div>
                   <Label>Status</Label>
@@ -288,7 +293,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
           <div className="flex gap-2 min-w-max">
             <button
               onClick={() => setSelectedStatus('all')}
-              className={`px-3 h-10 rounded-full border text-xs font-medium transition-colors ${
+              className={`px-3 h-8 rounded-full border text-xs font-medium transition-colors ${
                 selectedStatus === 'all'
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'bg-card text-muted-foreground border-border'
@@ -300,7 +305,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
               <button
                 key={status}
                 onClick={() => setSelectedStatus(status)}
-                className={`px-3 h-10 rounded-full border text-xs font-medium transition-colors ${
+                className={`px-3 h-8 rounded-full border text-xs font-medium transition-colors ${
                   selectedStatus === status
                     ? 'bg-primary text-primary-foreground border-primary'
                     : 'bg-card text-muted-foreground border-border'
@@ -316,26 +321,8 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
       {/* Leads List */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
         {isLoading ? (
-          <div className="space-y-3 pb-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-border/60 bg-card p-3 shadow-sm">
-                <div className="flex items-start gap-3">
-                  <Skeleton className="w-11 h-11 rounded-full flex-shrink-0" />
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-5 w-16 rounded-full" />
-                    </div>
-                    <Skeleton className="h-3 w-24" />
-                    <Skeleton className="h-3 w-28" />
-                    <div className="flex gap-2 mt-2">
-                      <Skeleton className="h-9 w-16 rounded-lg" />
-                      <Skeleton className="h-9 w-24 rounded-lg" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Loading leads...</p>
           </div>
         ) : filteredLeads.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border p-8 text-center">
@@ -374,7 +361,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
                             {lead.company || 'No company'}
                           </p>
                         </div>
-                        <Badge className={`${statusColors[lead.status]} border text-xs font-medium`}>
+                        <Badge className={`${statusColors[lead.status]} border text-[10px] font-medium`}>
                           {statusLabels[lead.status]}
                         </Badge>
                       </div>
@@ -410,6 +397,41 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
                           <MessageCircle className="w-3.5 h-3.5" />
                           WhatsApp
                         </button>
+                        <button
+                          onClick={(e) => handleEdit(lead, e)}
+                          className="h-9 w-9 rounded-lg bg-primary/15 text-primary flex items-center justify-center"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteLead.mutate(lead.id);
+                          }}
+                          className="h-9 w-9 rounded-lg bg-destructive/15 text-destructive flex items-center justify-center"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                        <Select
+                          value={lead.status}
+                          onValueChange={(value: LeadStatus) => {
+                            handleStatusChange(lead.id, value);
+                          }}
+                        >
+                          <SelectTrigger className="h-9 text-xs bg-muted/40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {allStatuses.map((s) => (
+                              <SelectItem key={s} value={s} className="text-xs">
+                                {statusLabels[s]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   </div>
@@ -429,14 +451,6 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
         onWhatsApp={onWhatsApp}
         onStatusChange={(leadId, newStatus) => {
           updateLead.mutate({ id: leadId, status: newStatus });
-        }}
-        onEdit={(lead) => {
-          setSelectedLead(null);
-          handleEdit(lead);
-        }}
-        onDelete={(leadId) => {
-          setSelectedLead(null);
-          deleteLead.mutate(leadId);
         }}
       />
     </div>

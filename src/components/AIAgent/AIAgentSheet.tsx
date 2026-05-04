@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Sparkles, Mic, MicOff, AlertCircle, Send, RotateCcw } from 'lucide-react';
+import { X, Sparkles, Mic, MicOff, AlertCircle, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAIAgent, AgentActionType } from '@/hooks/useAIAgent';
 import { cn } from '@/lib/utils';
@@ -90,40 +90,31 @@ const QUICK_PROMPTS = [
 ];
 
 const ACTION_LABELS: Partial<Record<AgentActionType, string>> = {
-  add_lead:          'Lead created',
-  update_lead:       'Lead updated',
-  call_lead:         'Call started',
-  whatsapp_lead:     'WhatsApp opened',
-  email_lead:        'Email opened',
-  add_activity:      'Activity logged',
-  add_task:          'Task created',
-  add_meeting:       'Meeting scheduled',
-  import_recordings: 'Recordings imported',
+  add_lead:          'LEAD CREATED',
+  update_lead:       'LEAD UPDATED',
+  call_lead:         'DIALER OPENED',
+  whatsapp_lead:     'WHATSAPP OPENED',
+  email_lead:        'EMAIL OPENED',
+  add_activity:      'ACTIVITY LOGGED',
+  add_task:          'TASK CREATED',
+  add_meeting:       'MEETING SCHEDULED',
+  import_recordings: 'RECORDINGS IMPORTED',
 };
 
-// Fixed heights for deterministic waveform rendering
-const WAVE_HEIGHTS = [8, 16, 12, 22, 14, 20, 10, 18, 12, 8];
+// HUD corner bracket component
+const HudCorner = ({ pos }: { pos: 'tl' | 'tr' | 'bl' | 'br' }) => {
+  const base = 'absolute w-5 h-5 pointer-events-none';
+  const classes = {
+    tl: 'top-3 left-3 border-l-2 border-t-2',
+    tr: 'top-3 right-3 border-r-2 border-t-2',
+    bl: 'bottom-3 left-3 border-l-2 border-b-2',
+    br: 'bottom-3 right-3 border-r-2 border-b-2',
+  }[pos];
+  return <div className={cn(base, classes)} style={{ borderColor: 'rgba(0,212,255,0.45)' }} />;
+};
 
-const VoiceWaveform = ({ isActive }: { isActive: boolean }) => (
-  <div className="flex items-end gap-[3px] h-7">
-    {WAVE_HEIGHTS.map((h, i) => (
-      <motion.div
-        key={i}
-        className="w-[3px] rounded-full flex-shrink-0"
-        style={{ background: 'rgba(167,139,250,0.75)' }}
-        animate={isActive
-          ? { height: [`${Math.max(4, h * 0.35)}px`, `${h}px`, `${Math.max(4, h * 0.35)}px`] }
-          : { height: '4px' }
-        }
-        transition={{
-          duration: 0.35 + (i % 3) * 0.12,
-          repeat: isActive ? Infinity : 0,
-          delay: i * 0.06,
-          ease: 'easeInOut',
-        }}
-      />
-    ))}
-  </div>
+const CyanDivider = () => (
+  <div className="h-px w-full" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,212,255,0.55), transparent)' }} />
 );
 
 const AIAgentSheet = ({ isOpen, onClose, onCall, onWhatsApp, onImportRecordings }: AIAgentSheetProps) => {
@@ -298,90 +289,102 @@ const AIAgentSheet = ({ isOpen, onClose, onCall, onWhatsApp, onImportRecordings 
 
   const handleChip = (prompt: string) => { if (!isLoading) sendMessage(prompt); };
 
-  const statusLabel = isListening ? 'Listening...' : isLoading ? 'Working on it...' : 'Ready · Talk to me';
+  // ─── STATUS ───────────────────────────────────────────────────────────
+  const statusLabel = isListening ? 'LISTENING' : isLoading ? 'PROCESSING' : 'STANDBY';
+  const statusColor = isListening ? '#00ff88' : isLoading ? '#ffb700' : '#00d4ff';
 
   return (
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 24 }}
-          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25 }}
           className="fixed inset-0 z-50 flex flex-col overflow-hidden select-none"
-          style={{ background: 'linear-gradient(160deg, #0f0a1e 0%, #130d28 60%, #0d0a1e 100%)' }}
+          style={{ background: 'linear-gradient(160deg, #000814 0%, #000c20 60%, #000814 100%)' }}
         >
-          {/* Subtle dot grid */}
+          {/* ── Hex grid background ── */}
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
-              backgroundImage: 'radial-gradient(circle, rgba(139,92,246,0.06) 1px, transparent 1px)',
-              backgroundSize: '28px 28px',
+              backgroundImage: `linear-gradient(rgba(0,212,255,0.06) 1px, transparent 1px),
+                                linear-gradient(90deg, rgba(0,212,255,0.06) 1px, transparent 1px)`,
+              backgroundSize: '44px 44px',
             }}
           />
 
-          {/* Soft radial glow */}
+          {/* ── Central radial glow ── */}
           <div
             className="absolute inset-0 pointer-events-none"
-            style={{ background: 'radial-gradient(ellipse 80% 55% at 50% 40%, rgba(88,28,135,0.2) 0%, transparent 100%)' }}
+            style={{ background: 'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,55,110,0.35) 0%, transparent 100%)' }}
           />
 
-          {/* ── HEADER ── */}
-          <div className="relative flex-shrink-0 px-5 pt-12 pb-4">
+          {/* ── HUD screen corners ── */}
+          <HudCorner pos="tl" />
+          <HudCorner pos="tr" />
+          <HudCorner pos="bl" />
+          <HudCorner pos="br" />
+
+          {/* ══════════════════════════════════════════ HEADER */}
+          <div className="relative flex-shrink-0 px-5 pt-10 pb-3">
             <div className="flex items-center justify-between">
-              {/* Orb + name */}
+              {/* Logo + title */}
               <div className="flex items-center gap-3">
+                {/* Spinning ring orb */}
                 <div className="relative w-11 h-11 flex items-center justify-center flex-shrink-0">
                   <motion.div
                     className="absolute inset-0 rounded-full"
-                    style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.3), rgba(99,102,241,0.2))' }}
-                    animate={{ scale: [1, 1.15, 1], opacity: [0.7, 0.4, 0.7] }}
-                    transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{ border: '1.5px solid rgba(0,212,255,0.5)' }}
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
                   />
-                  <div
-                    className="absolute inset-0 rounded-full"
-                    style={{ background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.4)' }}
+                  <motion.div
+                    className="absolute inset-1.5 rounded-full"
+                    style={{ border: '1px solid rgba(0,150,255,0.35)' }}
+                    animate={{ rotate: -360 }}
+                    transition={{ duration: 5, repeat: Infinity, ease: 'linear' }}
                   />
-                  <Sparkles className="w-4 h-4 relative z-10" style={{ color: '#a78bfa' }} strokeWidth={1.5} />
+                  <Sparkles className="w-4 h-4" style={{ color: '#00d4ff' }} strokeWidth={1.5} />
                 </div>
 
                 <div>
-                  <p
-                    className="font-bold text-xl tracking-wide"
-                    style={{ background: 'linear-gradient(135deg, #c4b5fd, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
-                  >
+                  <p className="font-mono font-bold text-xl tracking-[0.22em]" style={{ color: '#00d4ff' }}>
                     ARIA
                   </p>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <motion.div
-                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                      style={{ background: isListening ? '#a78bfa' : isLoading ? '#f59e0b' : '#8b5cf6' }}
-                      animate={{ opacity: [1, 0.35, 1] }}
-                      transition={{ duration: 1.4, repeat: Infinity }}
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ background: statusColor }}
+                      animate={{ opacity: [1, 0.3, 1] }}
+                      transition={{ duration: 1.2, repeat: Infinity }}
                     />
-                    <p className="text-xs" style={{ color: 'rgba(167,139,250,0.65)' }}>
+                    <p className="font-mono text-[9px] tracking-widest" style={{ color: statusColor }}>
                       {statusLabel}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Controls */}
+              {/* Right controls */}
               <div className="flex items-center gap-2">
                 {messages.length > 0 && (
                   <button
                     onClick={clearConversation}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all"
-                    style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.22)', color: 'rgba(167,139,250,0.65)' }}
+                    className="font-mono text-[10px] tracking-widest px-3 py-1.5 transition-all"
+                    style={{ border: '1px solid rgba(0,212,255,0.25)', color: 'rgba(0,212,255,0.5)' }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(0,212,255,0.6)'; (e.currentTarget as HTMLButtonElement).style.color = '#00d4ff'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(0,212,255,0.25)'; (e.currentTarget as HTMLButtonElement).style.color = 'rgba(0,212,255,0.5)'; }}
                   >
-                    <RotateCcw className="w-3 h-3" />
-                    Clear
+                    CLEAR
                   </button>
                 )}
                 <button
                   onClick={onClose}
-                  className="w-9 h-9 flex items-center justify-center rounded-full transition-all"
-                  style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', color: 'rgba(167,139,250,0.55)' }}
+                  className="w-8 h-8 flex items-center justify-center transition-all"
+                  style={{ border: '1px solid rgba(0,212,255,0.25)', color: 'rgba(0,212,255,0.5)' }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,60,60,0.6)'; (e.currentTarget as HTMLButtonElement).style.color = '#ff4444'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(0,212,255,0.25)'; (e.currentTarget as HTMLButtonElement).style.color = 'rgba(0,212,255,0.5)'; }}
                   aria-label="Close"
                 >
                   <X className="w-4 h-4" />
@@ -389,66 +392,49 @@ const AIAgentSheet = ({ isOpen, onClose, onCall, onWhatsApp, onImportRecordings 
               </div>
             </div>
 
-            <div
-              className="mt-4 h-px"
-              style={{ background: 'linear-gradient(90deg, transparent, rgba(139,92,246,0.28), transparent)' }}
-            />
+            <div className="mt-3">
+              <CyanDivider />
+            </div>
           </div>
 
-          {/* ── MESSAGES ── */}
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 overscroll-contain" style={{ scrollbarWidth: 'none' }}>
+          {/* ══════════════════════════════════════════ MESSAGES */}
+          <div className="flex-1 overflow-y-auto px-5 py-3 space-y-4 overscroll-contain" style={{ scrollbarWidth: 'none' }}>
 
-            {/* Welcome / empty state */}
+            {/* ── Empty / Welcome state ── */}
             {messages.length === 0 && (
               <motion.div
-                initial={{ opacity: 0, y: 24 }}
+                initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
-                className="flex flex-col items-center pt-4 gap-6"
+                transition={{ delay: 0.1 }}
+                className="flex flex-col items-center pt-6 gap-7"
               >
-                {/* Breathing orb */}
-                <div className="relative w-32 h-32 flex items-center justify-center">
-                  {[0, 1, 2].map((i) => (
+                {/* Central orb */}
+                <div className="relative w-36 h-36 flex items-center justify-center">
+                  {/* Ambient expanding rings */}
+                  {[0, 1, 2, 3].map((i) => (
                     <motion.div
                       key={i}
-                      className="absolute inset-0 rounded-full"
-                      style={{
-                        background: `rgba(139,92,246,${0.07 - i * 0.02})`,
-                        border: `1px solid rgba(139,92,246,${0.18 - i * 0.04})`,
-                      }}
-                      animate={{ scale: [1, 1.3 + i * 0.22], opacity: [0.6, 0] }}
-                      transition={{ duration: 2.4, repeat: Infinity, delay: i * 0.65, ease: 'easeOut' }}
+                      className="absolute rounded-full"
+                      style={{ inset: 0, border: '1px solid rgba(0,212,255,0.2)' }}
+                      animate={{ scale: [1, 1.6 + i * 0.25], opacity: [0.5, 0] }}
+                      transition={{ duration: 2.5, repeat: Infinity, delay: i * 0.55, ease: 'easeOut' }}
                     />
                   ))}
-                  <div
-                    className="relative w-20 h-20 rounded-full flex items-center justify-center"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(139,92,246,0.22), rgba(99,102,241,0.18))',
-                      border: '1.5px solid rgba(139,92,246,0.45)',
-                      boxShadow: '0 0 40px rgba(139,92,246,0.28), inset 0 0 20px rgba(139,92,246,0.07)',
-                    }}
-                  >
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
-                    >
-                      <Sparkles className="w-9 h-9" style={{ color: 'rgba(167,139,250,0.85)' }} strokeWidth={1.25} />
-                    </motion.div>
-                  </div>
+                  {/* Static rings */}
+                  <div className="absolute inset-6 rounded-full" style={{ border: '1px solid rgba(0,212,255,0.35)' }} />
+                  <div className="absolute inset-10 rounded-full" style={{ border: '1px solid rgba(0,150,255,0.4)', background: 'radial-gradient(circle, rgba(0,212,255,0.12) 0%, transparent 70%)' }} />
+                  <Sparkles className="w-10 h-10" style={{ color: 'rgba(0,212,255,0.7)' }} strokeWidth={1} />
                 </div>
 
                 <div className="text-center">
-                  <p
-                    className="font-bold text-2xl"
-                    style={{ background: 'linear-gradient(135deg, #e9d5ff, #a78bfa, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
-                  >
-                    Hey, I'm ARIA
+                  <p className="font-mono font-bold text-2xl tracking-[0.3em]" style={{ color: '#00d4ff' }}>
+                    ARIA ONLINE
                   </p>
-                  <p className="text-sm mt-1.5" style={{ color: 'rgba(167,139,250,0.55)' }}>
-                    Your AI CRM co-pilot
+                  <p className="font-mono text-[10px] tracking-widest mt-1" style={{ color: 'rgba(0,150,255,0.6)' }}>
+                    AI CRM ASSISTANT • GPT-4o
                   </p>
-                  <p className="text-xs mt-2 max-w-[240px] mx-auto leading-relaxed" style={{ color: 'rgba(139,92,246,0.4)' }}>
-                    Update leads · Call & WhatsApp · Log activities · Create tasks
+                  <p className="font-mono text-[11px] mt-3 max-w-[260px] mx-auto leading-relaxed" style={{ color: 'rgba(0,212,255,0.4)' }}>
+                    Update leads · Call · WhatsApp · Log activities<br />Create tasks · Add leads · Insights
                   </p>
                 </div>
 
@@ -459,12 +445,10 @@ const AIAgentSheet = ({ isOpen, onClose, onCall, onWhatsApp, onImportRecordings 
                       key={qp.label}
                       whileTap={{ scale: 0.95 }}
                       onClick={() => handleChip(qp.prompt)}
-                      className="text-xs px-3.5 py-2 rounded-full transition-all"
-                      style={{
-                        background: 'rgba(139,92,246,0.07)',
-                        border: '1px solid rgba(139,92,246,0.25)',
-                        color: 'rgba(196,181,253,0.75)',
-                      }}
+                      className="font-mono text-[10px] tracking-wider px-3 py-1.5 transition-all"
+                      style={{ border: '1px solid rgba(0,212,255,0.22)', color: 'rgba(0,212,255,0.6)', background: 'rgba(0,212,255,0.04)' }}
+                      onMouseEnter={(e) => { const el = e.currentTarget; el.style.borderColor = 'rgba(0,212,255,0.55)'; el.style.color = '#00d4ff'; el.style.background = 'rgba(0,212,255,0.1)'; }}
+                      onMouseLeave={(e) => { const el = e.currentTarget; el.style.borderColor = 'rgba(0,212,255,0.22)'; el.style.color = 'rgba(0,212,255,0.6)'; el.style.background = 'rgba(0,212,255,0.04)'; }}
                     >
                       {qp.label}
                     </motion.button>
@@ -473,62 +457,58 @@ const AIAgentSheet = ({ isOpen, onClose, onCall, onWhatsApp, onImportRecordings 
               </motion.div>
             )}
 
-            {/* Chat messages */}
+            {/* ── Chat messages ── */}
             {messages.map((msg) => (
               <div key={msg.id}>
                 <motion.div
                   initial={{ opacity: 0, x: msg.role === 'user' ? 16 : -16 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.22 }}
-                  className={cn('flex items-end gap-2', msg.role === 'user' ? 'justify-end' : 'justify-start')}
+                  transition={{ duration: 0.2 }}
+                  className={cn('flex items-start gap-2.5', msg.role === 'user' ? 'justify-end' : 'justify-start')}
                 >
                   {/* ARIA avatar */}
                   {msg.role === 'assistant' && (
                     <div
-                      className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mb-1"
-                      style={{
-                        background: 'linear-gradient(135deg, rgba(139,92,246,0.3), rgba(99,102,241,0.22))',
-                        border: '1px solid rgba(139,92,246,0.38)',
-                      }}
+                      className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+                      style={{ border: '1px solid rgba(0,212,255,0.45)', background: 'rgba(0,212,255,0.08)' }}
                     >
-                      <Sparkles className="w-3.5 h-3.5" style={{ color: '#a78bfa' }} strokeWidth={1.5} />
+                      <Sparkles className="w-3 h-3" style={{ color: '#00d4ff' }} strokeWidth={1.5} />
                     </div>
                   )}
 
                   {/* Bubble */}
                   <div
-                    className={cn(
-                      'max-w-[78%] px-4 py-2.5 text-sm leading-relaxed rounded-3xl',
-                      msg.role === 'user' ? 'rounded-br-md' : 'rounded-bl-md'
-                    )}
+                    className="max-w-[80%] px-3.5 py-2.5 text-[12.5px] leading-relaxed font-mono relative overflow-hidden"
                     style={
                       msg.role === 'user'
-                        ? {
-                            background: 'linear-gradient(135deg, rgba(109,40,217,0.48), rgba(67,56,202,0.42))',
-                            border: '1px solid rgba(139,92,246,0.32)',
-                            color: '#ede9fe',
-                          }
-                        : {
-                            background: 'rgba(255,255,255,0.04)',
-                            border: '1px solid rgba(139,92,246,0.18)',
-                            color: 'rgba(233,213,255,0.88)',
-                          }
+                        ? { border: '1px solid rgba(0,80,200,0.5)', background: 'rgba(0,60,160,0.2)', color: '#a8d4ff' }
+                        : { border: '1px solid rgba(0,212,255,0.28)', background: 'rgba(0,212,255,0.05)', color: '#7dd8ff' }
                     }
                   >
+                    {/* Scanline shimmer (ARIA bubbles only) */}
+                    {msg.role === 'assistant' && !msg.isLoading && (
+                      <motion.div
+                        className="absolute inset-0 pointer-events-none"
+                        style={{ background: 'linear-gradient(180deg, transparent 40%, rgba(0,212,255,0.04) 50%, transparent 60%)' }}
+                        animate={{ y: ['-100%', '200%'] }}
+                        transition={{ duration: 3, repeat: Infinity, ease: 'linear', repeatDelay: 2 }}
+                      />
+                    )}
+
                     {msg.isLoading ? (
                       <div className="flex items-center gap-1.5 py-0.5">
                         {[0, 1, 2].map((i) => (
                           <motion.div
                             key={i}
-                            className="w-2 h-2 rounded-full"
-                            style={{ background: 'rgba(167,139,250,0.65)' }}
-                            animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1, 0.8] }}
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ background: '#00d4ff' }}
+                            animate={{ opacity: [0.2, 1, 0.2] }}
                             transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.25 }}
                           />
                         ))}
                       </div>
                     ) : (
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                      <p className="whitespace-pre-wrap relative z-10">{msg.content}</p>
                     )}
                   </div>
                 </motion.div>
@@ -536,19 +516,19 @@ const AIAgentSheet = ({ isOpen, onClose, onCall, onWhatsApp, onImportRecordings 
                 {/* Action badge */}
                 {msg.action && msg.action.type !== 'none' && msg.action.executed && (
                   <motion.div
-                    initial={{ opacity: 0, x: -4 }}
+                    initial={{ opacity: 0, x: -6 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.1 }}
-                    className="flex items-center gap-1.5 ml-10 mt-1"
+                    className="flex items-center gap-1.5 ml-9 mt-1"
                   >
                     <motion.div
-                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                      style={{ background: '#a78bfa' }}
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ background: '#00ff88' }}
                       animate={{ opacity: [1, 0.4, 1] }}
                       transition={{ duration: 1.5, repeat: Infinity }}
                     />
-                    <span className="text-[10px]" style={{ color: 'rgba(167,139,250,0.6)' }}>
-                      ✓ {ACTION_LABELS[msg.action.type] ?? 'Action executed'}
+                    <span className="font-mono text-[9px] tracking-widest" style={{ color: '#00ff88' }}>
+                      ◈ {ACTION_LABELS[msg.action.type] ?? 'ACTION EXECUTED'}
                     </span>
                   </motion.div>
                 )}
@@ -559,19 +539,17 @@ const AIAgentSheet = ({ isOpen, onClose, onCall, onWhatsApp, onImportRecordings 
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2 }}
-                    className="flex flex-wrap gap-1.5 ml-10 mt-2"
+                    className="flex flex-wrap gap-1.5 ml-9 mt-2"
                   >
                     {msg.suggestions.map((s, idx) => (
                       <motion.button
                         key={idx}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => handleChip(s)}
-                        className="text-[11px] px-2.5 py-1 rounded-full transition-all"
-                        style={{
-                          background: 'rgba(139,92,246,0.07)',
-                          border: '1px solid rgba(139,92,246,0.2)',
-                          color: 'rgba(196,181,253,0.7)',
-                        }}
+                        className="font-mono text-[10px] tracking-wide px-2.5 py-1 transition-all"
+                        style={{ border: '1px solid rgba(0,212,255,0.2)', color: 'rgba(0,212,255,0.6)', background: 'transparent' }}
+                        onMouseEnter={(e) => { const el = e.currentTarget; el.style.borderColor = 'rgba(0,212,255,0.5)'; el.style.color = '#00d4ff'; el.style.background = 'rgba(0,212,255,0.08)'; }}
+                        onMouseLeave={(e) => { const el = e.currentTarget; el.style.borderColor = 'rgba(0,212,255,0.2)'; el.style.color = 'rgba(0,212,255,0.6)'; el.style.background = 'transparent'; }}
                       >
                         {s}
                       </motion.button>
@@ -584,12 +562,9 @@ const AIAgentSheet = ({ isOpen, onClose, onCall, onWhatsApp, onImportRecordings 
             <div ref={messagesBottomRef} />
           </div>
 
-          {/* ── BOTTOM PANEL ── */}
+          {/* ══════════════════════════════════════════ BOTTOM PANEL */}
           <div className="flex-shrink-0 pb-10 pt-2">
-            <div
-              className="h-px"
-              style={{ background: 'linear-gradient(90deg, transparent, rgba(139,92,246,0.22), transparent)' }}
-            />
+            <CyanDivider />
 
             {/* Voice error */}
             <AnimatePresence>
@@ -598,107 +573,96 @@ const AIAgentSheet = ({ isOpen, onClose, onCall, onWhatsApp, onImportRecordings 
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="flex items-center gap-2 mx-5 mt-3 px-3 py-2 rounded-xl"
-                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}
+                  className="flex items-center gap-2 mx-5 mt-3 px-3 py-2"
+                  style={{ border: '1px solid rgba(255,60,60,0.35)', background: 'rgba(255,30,30,0.07)' }}
                 >
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-red-400" />
-                  <p className="text-xs text-red-400">{voiceError}</p>
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#ff6060' }} />
+                  <p className="font-mono text-[11px]" style={{ color: '#ff6060' }}>{voiceError}</p>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* Mic + waveform */}
-            <div className="flex flex-col items-center mt-5 mb-4 gap-3">
-              <div style={{ height: 28, opacity: isListening ? 1 : 0, transition: 'opacity 0.3s ease' }}>
-                <VoiceWaveform isActive={isListening} />
-              </div>
-
+            {/* ── Central mic orb ── */}
+            <div className="flex flex-col items-center mt-5 mb-4 gap-2">
               <button
                 onClick={isListening ? handleVoiceStop : () => void handleVoiceStart(false)}
                 disabled={isLoading}
                 aria-label={isListening ? 'Stop listening' : 'Tap to speak'}
-                className="relative w-[72px] h-[72px] rounded-full flex items-center justify-center transition-all"
+                className="relative w-20 h-20 rounded-full flex items-center justify-center transition-all"
                 style={{
-                  background: isListening
-                    ? 'linear-gradient(135deg, rgba(124,58,237,0.65), rgba(79,70,229,0.55))'
-                    : 'linear-gradient(135deg, rgba(139,92,246,0.22), rgba(99,102,241,0.17))',
                   border: isListening
-                    ? '2px solid rgba(167,139,250,0.72)'
-                    : '2px solid rgba(139,92,246,0.32)',
+                    ? '2px solid rgba(0,212,255,0.9)'
+                    : '2px solid rgba(0,212,255,0.3)',
+                  background: isListening
+                    ? 'radial-gradient(circle, rgba(0,212,255,0.22) 0%, rgba(0,20,50,0.95) 100%)'
+                    : 'radial-gradient(circle, rgba(0,212,255,0.07) 0%, rgba(0,8,20,0.98) 100%)',
                   boxShadow: isListening
-                    ? '0 0 32px rgba(139,92,246,0.45), 0 8px 28px rgba(109,40,217,0.4)'
-                    : '0 0 18px rgba(139,92,246,0.18)',
-                  opacity: isLoading ? 0.45 : 1,
+                    ? '0 0 32px rgba(0,212,255,0.45), 0 0 80px rgba(0,100,255,0.2), inset 0 0 20px rgba(0,212,255,0.12)'
+                    : '0 0 16px rgba(0,212,255,0.12)',
+                  opacity: isLoading ? 0.5 : 1,
                   cursor: isLoading ? 'not-allowed' : 'pointer',
                 }}
               >
-                {/* Pulse rings when listening */}
-                {isListening && [0, 1].map((i) => (
+                {/* Pulsing rings when listening */}
+                {isListening && [0, 1, 2].map((i) => (
                   <motion.div
                     key={i}
                     className="absolute inset-0 rounded-full pointer-events-none"
-                    style={{ border: '1.5px solid rgba(167,139,250,0.5)' }}
-                    animate={{ scale: [1, 1.65 + i * 0.3], opacity: [0.55, 0] }}
-                    transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.42, ease: 'easeOut' }}
+                    style={{ border: '1.5px solid rgba(0,212,255,0.5)' }}
+                    animate={{ scale: [1, 1.55 + i * 0.3], opacity: [0.7, 0] }}
+                    transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.38, ease: 'easeOut' }}
                   />
                 ))}
 
-                {/* Loading spinner */}
+                {/* Loading spinner ring */}
                 {isLoading && (
                   <motion.div
                     className="absolute inset-1 rounded-full pointer-events-none"
-                    style={{ border: '1.5px solid transparent', borderTopColor: 'rgba(167,139,250,0.55)' }}
+                    style={{ border: '1.5px solid transparent', borderTopColor: 'rgba(0,212,255,0.6)' }}
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                   />
                 )}
 
                 {isListening ? (
-                  <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 0.6, repeat: Infinity }}>
-                    <MicOff className="w-7 h-7" style={{ color: '#c4b5fd' }} />
+                  <motion.div animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 0.55, repeat: Infinity }}>
+                    <MicOff className="w-7 h-7" style={{ color: '#00d4ff' }} />
                   </motion.div>
                 ) : (
-                  <Mic className="w-7 h-7" style={{ color: isLoading ? 'rgba(167,139,250,0.3)' : 'rgba(167,139,250,0.78)' }} />
+                  <Mic className="w-7 h-7" style={{ color: isLoading ? 'rgba(0,212,255,0.4)' : 'rgba(0,212,255,0.7)' }} />
                 )}
               </button>
 
-              <p className="text-xs" style={{ color: 'rgba(139,92,246,0.45)' }}>
-                {isListening ? 'tap to stop' : isLoading ? 'processing...' : 'tap to speak'}
+              <p className="font-mono text-[9px] tracking-[0.22em]" style={{ color: 'rgba(0,212,255,0.4)' }}>
+                {isListening ? '◉  LISTENING' : isLoading ? '◌  PROCESSING' : '○  TAP TO SPEAK'}
               </p>
             </div>
 
-            {/* Text input */}
-            <div className="flex items-center gap-2 mx-4">
-              <div
-                className="flex-1 flex items-center rounded-2xl overflow-hidden"
-                style={{ background: 'rgba(139,92,246,0.07)', border: '1px solid rgba(139,92,246,0.2)' }}
-              >
-                <input
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder="Type a message..."
-                  className="flex-1 bg-transparent px-4 py-3 text-sm outline-none"
-                  style={{ color: '#e9d5ff', caretColor: '#a78bfa' }}
-                />
-              </div>
+            {/* ── Text input ── */}
+            <div
+              className="flex items-center mx-5"
+              style={{ border: '1px solid rgba(0,212,255,0.22)', background: 'rgba(0,212,255,0.03)' }}
+            >
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                placeholder="TYPE A COMMAND..."
+                className="flex-1 bg-transparent px-3.5 py-3 font-mono text-[12px] outline-none"
+                style={{ color: '#7dd8ff', caretColor: '#00d4ff' }}
+              />
               <motion.button
                 whileTap={{ scale: 0.9 }}
                 onClick={() => handleSend()}
                 disabled={!inputText.trim() || isLoading}
-                className="w-11 h-11 rounded-full flex items-center justify-center transition-all"
+                className="px-4 py-3 transition-all flex items-center justify-center"
                 style={{
-                  background: inputText.trim() && !isLoading
-                    ? 'linear-gradient(135deg, #8b5cf6, #6366f1)'
-                    : 'rgba(139,92,246,0.1)',
-                  boxShadow: inputText.trim() && !isLoading ? '0 4px 16px rgba(139,92,246,0.38)' : 'none',
+                  color: inputText.trim() && !isLoading ? '#00d4ff' : 'rgba(0,212,255,0.25)',
+                  borderLeft: '1px solid rgba(0,212,255,0.18)',
                 }}
               >
-                <Send
-                  className="w-4 h-4"
-                  style={{ color: inputText.trim() && !isLoading ? 'white' : 'rgba(139,92,246,0.28)' }}
-                />
+                <Send className="w-4 h-4" />
               </motion.button>
             </div>
           </div>
