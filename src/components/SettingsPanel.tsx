@@ -12,7 +12,7 @@ const SettingsPanel = () => {
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState(true);
   const { theme, setTheme } = useTheme();
-  const { user, signOut } = useAuth();
+  const { user, role, signOut } = useAuth();
 
   const isDark = theme === 'dark';
 
@@ -21,11 +21,8 @@ const SettingsPanel = () => {
     navigate('/auth');
   };
 
-  // Get user initials
-  const getInitials = () => {
-    if (!user?.email) return 'U';
-    return user.email.charAt(0).toUpperCase();
-  };
+  const initials = user?.email ? user.email.slice(0, 2).toUpperCase() : 'U';
+  const roleLabel = role === 'super_admin' ? 'Super Admin' : role === 'admin' ? 'Admin' : 'Sales Rep';
 
   const menuItems = [
     { icon: FileText, label: 'Privacy Policy', hasChevron: true, onClick: () => navigate('/privacy') },
@@ -33,36 +30,40 @@ const SettingsPanel = () => {
 
   return (
     <div className="pb-20">
-      {/* Profile Header */}
-      <div className="px-4 pt-6 pb-8">
-        <div className="glass-card p-6 flex items-center gap-4">
-          <Avatar className="w-16 h-16 bg-gradient-to-br from-primary to-accent">
-            <AvatarFallback className="bg-transparent text-primary-foreground text-xl font-semibold">
-              {getInitials()}
+      {/* Profile Header — compact */}
+      <div className="px-4 pt-4 pb-6">
+        <div className="glass-card p-4 flex items-center gap-3">
+          <Avatar className="h-12 w-12 bg-gradient-to-br from-primary to-accent flex-shrink-0">
+            <AvatarFallback className="bg-transparent text-primary-foreground text-base font-bold">
+              {initials}
             </AvatarFallback>
           </Avatar>
-          <div>
-            <h2 className="text-xl font-bold text-foreground">{user?.email || 'User'}</h2>
-            <p className="text-sm text-muted-foreground">Sales Representative</p>
-            <p className="text-xs text-primary mt-1">Active</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">{user?.email || 'User'}</p>
+            <div className="mt-0.5 flex items-center gap-2">
+              <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                {roleLabel}
+              </span>
+              <span className="text-xs text-emerald-500">● Active</span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Quick Settings */}
       <div className="px-4 mb-6">
-        <h2 className="text-sm font-medium text-muted-foreground mb-3">Quick Settings</h2>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Preferences</h2>
         <div className="glass-card divide-y divide-border">
-          <div className="p-4 flex items-center justify-between">
+          <div className="flex items-center justify-between p-4">
             <div className="flex items-center gap-3">
-              {isDark ? <Moon className="w-5 h-5 text-muted-foreground" /> : <Sun className="w-5 h-5 text-muted-foreground" />}
+              {isDark ? <Moon className="h-5 w-5 text-muted-foreground" /> : <Sun className="h-5 w-5 text-muted-foreground" />}
               <span className="text-foreground">Dark Mode</span>
             </div>
             <Switch checked={isDark} onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')} />
           </div>
-          <div className="p-4 flex items-center justify-between">
+          <div className="flex items-center justify-between p-4">
             <div className="flex items-center gap-3">
-              <Bell className="w-5 h-5 text-muted-foreground" />
+              <Bell className="h-5 w-5 text-muted-foreground" />
               <span className="text-foreground">Push Notifications</span>
             </div>
             <Switch checked={notifications} onCheckedChange={setNotifications} />
@@ -75,20 +76,20 @@ const SettingsPanel = () => {
 
       {/* Menu Items */}
       <div className="px-4 mb-6">
-        <h2 className="text-sm font-medium text-muted-foreground mb-3">Settings</h2>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">More</h2>
         <div className="glass-card divide-y divide-border">
-          {menuItems.map((item, index) => (
+          {menuItems.map((item) => (
             <motion.button
               key={item.label}
               whileTap={{ scale: 0.98 }}
               onClick={item.onClick}
-              className="w-full p-4 flex items-center justify-between hover:bg-secondary/30 transition-colors"
+              className="flex w-full items-center justify-between p-4 transition-colors hover:bg-secondary/30"
             >
               <div className="flex items-center gap-3">
-                <item.icon className="w-5 h-5 text-muted-foreground" />
+                <item.icon className="h-5 w-5 text-muted-foreground" />
                 <span className="text-foreground">{item.label}</span>
               </div>
-              {item.hasChevron && <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+              {item.hasChevron && <ChevronRight className="h-5 w-5 text-muted-foreground" />}
             </motion.button>
           ))}
         </div>
@@ -96,7 +97,7 @@ const SettingsPanel = () => {
 
       {/* Stats */}
       <div className="px-4 mb-6">
-        <h2 className="text-sm font-medium text-muted-foreground mb-3">This Month</h2>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">This Month</h2>
         <div className="grid grid-cols-3 gap-3">
           <div className="glass-card p-4 text-center">
             <p className="text-2xl font-bold gradient-text">147</p>
@@ -113,15 +114,15 @@ const SettingsPanel = () => {
         </div>
       </div>
 
-      {/* Logout */}
+      {/* Sign out — destructive card */}
       <div className="px-4">
         <motion.button
           whileTap={{ scale: 0.98 }}
           onClick={handleSignOut}
-          className="w-full glass-card p-4 flex items-center justify-center gap-2 text-destructive hover:bg-destructive/10 transition-colors"
+          className="glass-card w-full p-4 flex items-center justify-center gap-2 text-destructive hover:bg-destructive/10 transition-colors"
         >
-          <LogOut className="w-5 h-5" />
-          <span>Sign Out</span>
+          <LogOut className="h-5 w-5" />
+          <span className="font-medium">Sign Out</span>
         </motion.button>
       </div>
     </div>
