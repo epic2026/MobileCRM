@@ -16,6 +16,7 @@ import {
   X,
   Volume2,
   Edit2,
+  Trash2,
 } from 'lucide-react';
 import { Lead, LeadStatus } from '@/hooks/useLeads';
 import { useLeadTasks, TaskStatus } from '@/hooks/useLeadTasks';
@@ -62,6 +63,8 @@ interface LeadDetailSheetProps {
   onCall: (phone: string, name: string, leadId?: string) => void;
   onWhatsApp: (phone: string, name: string, leadId?: string) => void;
   onStatusChange?: (leadId: string, newStatus: LeadStatus) => void;
+  onEdit?: (lead: Lead) => void;
+  onDelete?: (leadId: string) => void;
 }
 
 const statusColors: Record<LeadStatus, string> = {
@@ -109,7 +112,7 @@ const recordingSourceLabel = (recording: { file_path: string; transcription: str
   return 'App Recorder';
 };
 
-const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusChange }: LeadDetailSheetProps) => {
+const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusChange, onEdit, onDelete }: LeadDetailSheetProps) => {
   const { tasks, createTask, updateTask } = useLeadTasks(lead?.id ?? null);
   const { activities, createActivity } = useLeadActivities(lead?.id ?? null);
   const { recordings } = useCallRecordings(lead?.id ?? null);
@@ -372,7 +375,29 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
               </AvatarFallback>
             </Avatar>
             <div className="flex-1">
-              <h2 className="text-xl font-bold text-foreground">{lead.name}</h2>
+              <div className="flex items-start justify-between gap-2">
+                <h2 className="text-xl font-bold text-foreground">{lead.name}</h2>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {onEdit && (
+                    <button
+                      onClick={() => onEdit(lead)}
+                      className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center hover:bg-primary/20 transition-colors"
+                      aria-label="Edit lead"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button
+                      onClick={() => onDelete(lead.id)}
+                      className="h-8 w-8 rounded-lg bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive/20 transition-colors"
+                      aria-label="Delete lead"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
               <p className="text-sm text-muted-foreground">{lead.company || 'No company'}</p>
               <div className="flex items-center gap-2 mt-1">
                 <DropdownMenu>
