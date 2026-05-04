@@ -1499,6 +1499,23 @@ const AdminDashboard = () => {
     }
   };
 
+  const renderSectionHeader = () => (
+    <div className="mb-5 flex items-center justify-between gap-4">
+      <div className="flex items-center gap-2 min-w-0">
+        <h1 className="text-base font-semibold text-slate-900">{activeSectionTitle}</h1>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+          {activeSectionCount}
+        </span>
+      </div>
+      {activeSection === 'team' && (
+        <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          Invite user
+        </Button>
+      )}
+    </div>
+  );
+
   const renderSectionSkeleton = (variant: 'overview' | 'analytics' | 'table') => {
     if (variant === 'table') {
       return (
@@ -1723,24 +1740,26 @@ const AdminDashboard = () => {
     if (isFetchingCallLogs && callLogs.length === 0) return renderSectionSkeleton('analytics');
     return (
     <div className="space-y-4">
-      {/* KPI cards — primary tier: shadow-sm + ring to lift above chart cards */}
+      {/* KPI cards — primary tier */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm ring-1 ring-black/[0.04]">
-          <p className="text-xs font-medium text-slate-500">Total calls</p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{callActivityReport.totals.totalCalls}</p>
-        </div>
-        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm ring-1 ring-black/[0.04]">
-          <p className="text-xs font-medium text-slate-500">Connect rate</p>
-          <p className="mt-1 text-2xl font-bold text-blue-600">{callActivityReport.totals.answerRate}%</p>
-        </div>
-        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm ring-1 ring-black/[0.04]">
-          <p className="text-xs font-medium text-slate-500">Total talk time</p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{formatCallDuration(callActivityReport.totals.totalDurationSeconds)}</p>
-        </div>
-        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm ring-1 ring-black/[0.04]">
-          <p className="text-xs font-medium text-slate-500">Active users</p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{callActivityReport.byUser.length}</p>
-        </div>
+        {[
+          { label: 'Total calls', value: callActivityReport.totals.totalCalls, color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100', Icon: Phone },
+          { label: 'Connect rate', value: `${callActivityReport.totals.answerRate}%`, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100', Icon: PhoneCall },
+          { label: 'Total talk time', value: formatCallDuration(callActivityReport.totals.totalDurationSeconds), color: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-100', Icon: Activity },
+          { label: 'Active users', value: callActivityReport.byUser.length, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100', Icon: Users },
+        ].map(({ label, value, color, bg, border, Icon }) => (
+          <div key={label} className={`rounded-xl border ${border} ${bg} p-4 shadow-sm ring-1 ring-black/[0.04]`}>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-medium text-slate-500">{label}</p>
+                <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+              </div>
+              <div className={`rounded-lg ${bg} p-2`}>
+                <Icon className={`h-4 w-4 ${color}`} />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Minimalist Control Strip */}
@@ -2932,71 +2951,6 @@ const AdminDashboard = () => {
 
   const renderTeam = () => (
     <div className="space-y-5 pb-8">
-      {/* Header with invite button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-medium text-slate-500">{users.length} {users.length === 1 ? 'user' : 'users'}</p>
-        </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <Plus className="mr-2 h-4 w-4" />
-              Invite user
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Invite User</DialogTitle>
-              <DialogDescription>Send a signup link to the user's email. They'll set their own password.</DialogDescription>
-            </DialogHeader>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                createUser.mutate(newUserData);
-              }}
-              className="space-y-3"
-            >
-              <div className="space-y-2">
-                <Label>Full Name</Label>
-                <Input
-                  value={newUserData.fullName}
-                  onChange={(event) => setNewUserData((prev) => ({ ...prev, fullName: event.target.value }))}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  value={newUserData.email}
-                  onChange={(event) => setNewUserData((prev) => ({ ...prev, email: event.target.value }))}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select
-                  value={newUserData.role}
-                  onValueChange={(value: 'super_admin' | 'admin' | 'sales') => setNewUserData((prev) => ({ ...prev, role: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="sales">Sales</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    {isSuperAdmin ? <SelectItem value="super_admin">Super Admin</SelectItem> : null}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button type="submit" className="w-full" disabled={createUser.isPending}>
-                {createUser.isPending ? 'Sending Invite...' : 'Send Invite'}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
       {/* Bulk action bar */}
       {selectedUserIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
@@ -3407,9 +3361,12 @@ const AdminDashboard = () => {
                   <button
                     key={item.id}
                     onClick={() => setActiveSection(item.id)}
-                    className={`flex w-full items-center rounded-xl px-3 py-2.5 text-left transition-all ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${isActive ? 'bg-[#2d54b5] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
+                    className={`relative flex w-full items-center rounded-xl px-3 py-2.5 text-left transition-all ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${isActive ? 'bg-blue-50 text-[#2d54b5]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
                   >
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                    {isActive && !sidebarCollapsed && (
+                      <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-[#2d54b5]" />
+                    )}
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${isActive ? 'bg-[#2d54b5] text-white' : 'bg-slate-100 text-slate-500'}`}>
                       <Icon className="h-4 w-4" />
                     </span>
                     {!sidebarCollapsed && (
@@ -3420,20 +3377,35 @@ const AdminDashboard = () => {
               })}
             </nav>
 
-            <div className="mt-4 border-t border-slate-200 pt-4">
+            <div className="mt-auto border-t border-slate-200 pt-4 space-y-3">
+              {!sidebarCollapsed && (() => {
+                const me = users.find(u => u.id === user?.id);
+                const initials = getInitials(me?.full_name ?? null, me?.email ?? user?.email ?? '?');
+                const avatarColor = getAvatarColor(user?.id ?? 'me');
+                return (
+                  <div className="flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5">
+                    <div className={`h-7 w-7 shrink-0 rounded-full ${avatarColor} flex items-center justify-center text-xs font-bold text-white`}>
+                      {initials}
+                    </div>
+                    <p className="truncate text-sm font-medium text-slate-700">{me?.full_name || me?.email || user?.email || '—'}</p>
+                  </div>
+                );
+              })()}
               <Button
-                variant="outline"
-                className={`w-full justify-center border-slate-200 text-slate-600 hover:text-slate-900 ${sidebarCollapsed ? 'px-0' : 'justify-start gap-2'}`}
+                variant="ghost"
+                size="sm"
+                className={`w-full text-slate-500 hover:text-rose-600 hover:bg-rose-50 ${sidebarCollapsed ? 'justify-center px-0' : 'justify-start gap-2'}`}
                 onClick={() => void handleSignOut()}
               >
-                <LogOut className="h-4 w-4" />
-                {!sidebarCollapsed && 'Logout'}
+                <LogOut className="h-4 w-4 shrink-0" />
+                {!sidebarCollapsed && <span className="text-sm">Sign out</span>}
               </Button>
             </div>
           </aside>
 
-          <div className="min-w-0 space-y-4 overflow-hidden p-4 lg:p-5">
+          <div className="min-w-0 overflow-hidden p-4 lg:p-5">
             <main className="min-w-0 h-[calc(100vh-env(safe-area-inset-top))] lg:h-[calc(100vh-env(safe-area-inset-top)-32px)] overflow-y-auto pr-0">
+              {renderSectionHeader()}
               {activeSection === 'overview' && renderOverview()}
               {activeSection === 'leads' && renderLeads()}
               {activeSection === 'analytics' && renderAnalytics()}
@@ -3544,6 +3516,46 @@ const AdminDashboard = () => {
           </form>
         </SheetContent>
       </Sheet>
+
+      {/* Invite user dialog — controlled by isCreateDialogOpen (triggered from section header) */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invite User</DialogTitle>
+            <DialogDescription>Send a signup link to the user's email. They'll set their own password.</DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              createUser.mutate(newUserData);
+            }}
+            className="space-y-3"
+          >
+            <div className="space-y-2">
+              <Label>Full Name</Label>
+              <Input value={newUserData.fullName} onChange={(e) => setNewUserData((p) => ({ ...p, fullName: e.target.value }))} required />
+            </div>
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input type="email" value={newUserData.email} onChange={(e) => setNewUserData((p) => ({ ...p, email: e.target.value }))} required />
+            </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select value={newUserData.role} onValueChange={(v: 'super_admin' | 'admin' | 'sales') => setNewUserData((p) => ({ ...p, role: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sales">Sales</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  {isSuperAdmin && <SelectItem value="super_admin">Super Admin</SelectItem>}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" className="w-full" disabled={createUser.isPending}>
+              {createUser.isPending ? 'Sending Invite…' : 'Send Invite'}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <AlertDialogContent>
