@@ -66,11 +66,12 @@ class CallLogPlugin : Plugin() {
             null,
             null,
             null,
-            "${CallLog.Calls.DATE} DESC LIMIT $limit"
+            "${CallLog.Calls.DATE} DESC"
         )
 
         cursor?.use {
-            while (it.moveToNext()) {
+            var count = 0
+            while (it.moveToNext() && count < limit) {
                 val obj = JSObject()
                 val number = it.getString(it.getColumnIndexOrThrow(CallLog.Calls.NUMBER)).orEmpty()
                 val date = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DATE))
@@ -87,6 +88,7 @@ class CallLogPlugin : Plugin() {
                 obj.put("timestamp", date)
                 obj.put("duration", it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DURATION)))
                 logs.put(obj)
+                count++
             }
         }
 
