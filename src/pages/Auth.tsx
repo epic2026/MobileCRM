@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { Phone, User, Mail, Lock, LogIn, UserPlus, Shield, Smartphone, Download, X } from 'lucide-react';
 
-const APP_URL = 'https://mobilecrm-production.up.railway.app';
+const APP_URL = 'https://callifyleads.com';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),

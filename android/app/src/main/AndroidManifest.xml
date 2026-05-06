@@ -31,7 +31,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="mobilecrm-production.up.railway.app" />
+                <data android:scheme="https" android:host="callifyleads.com" />
             </intent-filter>
 
             <!-- Custom scheme: fallback for intent:// redirects from the web invite page -->

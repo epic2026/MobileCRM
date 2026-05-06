@@ -10,7 +10,7 @@ import { Building, Check, Loader2, X, Smartphone, Download } from 'lucide-react'
 
 type Stage = 'loading' | 'set-password' | 'success' | 'error';
 
-const APP_URL = 'https://mobilecrm-production.up.railway.app';
+const APP_URL = 'https://callifyleads.com';
 
 const AcceptInvite = () => {
   const navigate = useNavigate();
