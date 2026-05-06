@@ -17,8 +17,12 @@ import {
   Volume2,
   Edit2,
   Trash2,
+  LayoutList,
+  Save,
 } from 'lucide-react';
 import { Lead, LeadStatus } from '@/hooks/useLeads';
+import { useCustomFields } from '@/hooks/useCustomFields';
+import { supabase } from '@/integrations/supabase/client';
 import { useLeadTasks, TaskStatus } from '@/hooks/useLeadTasks';
 import { useLeadActivities, ActivityType } from '@/hooks/useLeadActivities';
 import { useCallRecordings } from '@/hooks/useCallRecordings';
@@ -121,6 +125,33 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
   const [isAddingActivity, setIsAddingActivity] = useState(false);
   const [taskForm, setTaskForm] = useState({ title: '', description: '', due_date: '' });
   const [activityForm, setActivityForm] = useState({ type: 'note' as ActivityType, title: '', description: '' });
+
+  // Custom fields
+  const { fields: customFieldDefs } = useCustomFields('lead');
+  const [customValues, setCustomValues] = useState<Record<string, unknown>>({});
+  const [customDirty, setCustomDirty] = useState(false);
+  const [customSaving, setCustomSaving] = useState(false);
+
+  const initCustomValues = () => {
+    if (!lead) return;
+    setCustomValues(lead.custom_fields ?? {});
+    setCustomDirty(false);
+  };
+
+  const saveCustomFields = async () => {
+    if (!lead) return;
+    setCustomSaving(true);
+    try {
+      const { error } = await (supabase as any)
+        .from('leads')
+        .update({ custom_fields: customValues })
+        .eq('id', lead.id);
+      if (error) throw error;
+      setCustomDirty(false);
+    } finally {
+      setCustomSaving(false);
+    }
+  };
 
   const recordingsByActivityId = useMemo(() => {
     if (!lead) return new Map<string, (typeof recordings)[number]>();
@@ -468,13 +499,16 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
 
         {/* Content Tabs */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <Tabs defaultValue="activity" className="w-full h-full flex flex-col">
+          <Tabs defaultValue="activity" className="w-full h-full flex flex-col" onValueChange={(v) => { if (v === 'details') initCustomValues(); }}>
             <TabsList className="w-full justify-start px-6 pt-4 bg-transparent">
               <TabsTrigger value="activity" className="text-sm">
                 Activity
               </TabsTrigger>
               <TabsTrigger value="tasks" className="text-sm">
                 Tasks ({tasks.length})
+              </TabsTrigger>
+              <TabsTrigger value="details" className="text-sm">
+                Details
               </TabsTrigger>
               <TabsTrigger value="insights" className="text-sm">
                 AI Insights
@@ -685,6 +719,119 @@ const LeadDetailSheet = ({ lead, isOpen, onClose, onCall, onWhatsApp, onStatusCh
                   ))
                 )}
               </div>
+            </TabsContent>
+
+            {/* Details Tab — standard info + custom fields */}
+            <TabsContent value="details" className="px-6 pb-6 flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col overflow-y-auto">
+              {/* Standard fields (read-only summary) */}
+              <div className="space-y-3 mb-6">
+                <h3 className="font-semibold text-foreground text-sm">Lead Info</h3>
+                <div className="glass-card divide-y divide-border text-sm">
+                  {[
+                    { label: 'Phone',   value: lead.phone },
+                    { label: 'Email',   value: lead.email },
+                    { label: 'Company', value: lead.company },
+                    { label: 'Source',  value: lead.source },
+                    { label: 'Value',   value: lead.value != null ? `₹${lead.value.toLocaleString('en-IN')}` : null },
+                    { label: 'Notes',   value: lead.notes },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex gap-3 px-4 py-2.5">
+                      <span className="w-20 shrink-0 text-muted-foreground">{label}</span>
+                      <span className="text-foreground break-words">{value ?? <span className="text-muted-foreground/50">—</span>}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom fields */}
+              {customFieldDefs.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-foreground text-sm flex items-center gap-1.5">
+                      <LayoutList className="w-4 h-4 text-muted-foreground" />
+                      Custom Fields
+                    </h3>
+                    {customDirty && (
+                      <Button
+                        size="sm"
+                        className="h-7 gap-1"
+                        onClick={saveCustomFields}
+                        disabled={customSaving}
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        {customSaving ? 'Saving…' : 'Save'}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    {customFieldDefs.map((def) => {
+                      const val = customValues[def.field_key];
+                      const onChange = (newVal: unknown) => {
+                        setCustomValues((p) => ({ ...p, [def.field_key]: newVal }));
+                        setCustomDirty(true);
+                      };
+                      return (
+                        <div key={def.id} className="space-y-1.5">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            {def.field_label}
+                            {def.required && <span className="text-destructive ml-0.5">*</span>}
+                          </label>
+
+                          {def.field_type === 'checkbox' ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-border accent-primary"
+                                checked={Boolean(val)}
+                                onChange={(e) => onChange(e.target.checked)}
+                              />
+                              <span className="text-sm text-muted-foreground">{Boolean(val) ? 'Yes' : 'No'}</span>
+                            </div>
+                          ) : def.field_type === 'select' ? (
+                            <Select
+                              value={String(val ?? '')}
+                              onValueChange={(v) => onChange(v)}
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder="Select…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {def.options.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : def.field_type === 'textarea' ? (
+                            <textarea
+                              rows={3}
+                              value={String(val ?? '')}
+                              onChange={(e) => onChange(e.target.value)}
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+                              placeholder={`Enter ${def.field_label.toLowerCase()}…`}
+                            />
+                          ) : (
+                            <input
+                              type={def.field_type === 'number' ? 'number' : def.field_type === 'date' ? 'date' : 'text'}
+                              value={String(val ?? '')}
+                              onChange={(e) => onChange(def.field_type === 'number' ? Number(e.target.value) : e.target.value)}
+                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                              placeholder={`Enter ${def.field_label.toLowerCase()}…`}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {customFieldDefs.length === 0 && (
+                <div className="py-8 text-center">
+                  <LayoutList className="mx-auto mb-2 h-7 w-7 text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground">No custom fields configured.</p>
+                  <p className="text-xs text-muted-foreground/60 mt-0.5">Ask your admin to add fields in Settings.</p>
+                </div>
+              )}
             </TabsContent>
 
             {/* AI Insights Tab */}

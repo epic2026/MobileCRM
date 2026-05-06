@@ -24,6 +24,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import LeadDetailSheet from '@/components/LeadDetailSheet';
+import { useCustomFields } from '@/hooks/useCustomFields';
 
 const allStatuses: LeadStatus[] = ['new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
 
@@ -54,6 +55,7 @@ const statusLabels: Record<LeadStatus, string> = {
 
 const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
   const { leads, isLoading, createLead, updateLead, deleteLead } = useLeads();
+  const { fields: customFieldDefs } = useCustomFields('lead');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<'all' | LeadStatus>('all');
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
@@ -72,6 +74,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
     value: '',
     status: 'new' as LeadStatus,
   });
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, unknown>>({});
 
   const resetForm = () => {
     setFormData({
@@ -84,6 +87,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
       value: '',
       status: 'new',
     });
+    setCustomFieldValues({});
     setEditingLead(null);
   };
 
@@ -99,6 +103,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
       notes: formData.notes || null,
       value: formData.value ? parseFloat(formData.value) : null,
       status: formData.status,
+      custom_fields: customFieldValues,
     };
 
     if (editingLead) {
@@ -123,6 +128,7 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
       value: lead.value?.toString() || '',
       status: lead.status,
     });
+    setCustomFieldValues(lead.custom_fields ?? {});
     setEditingLead(lead);
     setIsAddSheetOpen(true);
   };
@@ -276,6 +282,64 @@ const LeadsPanel = ({ onCall, onWhatsApp }: LeadsPanelProps) => {
                     rows={3}
                   />
                 </div>
+
+                {/* Custom fields */}
+                {customFieldDefs.length > 0 && (
+                  <div className="space-y-4 pt-2 border-t border-border">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Custom Fields</p>
+                    {customFieldDefs.map((def) => {
+                      const val = customFieldValues[def.field_key];
+                      const onChange = (newVal: unknown) =>
+                        setCustomFieldValues((p) => ({ ...p, [def.field_key]: newVal }));
+                      return (
+                        <div key={def.id}>
+                          <Label>
+                            {def.field_label}
+                            {def.required && <span className="text-destructive ml-0.5">*</span>}
+                          </Label>
+                          {def.field_type === 'checkbox' ? (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-border accent-primary"
+                                checked={Boolean(val)}
+                                onChange={(e) => onChange(e.target.checked)}
+                              />
+                              <span className="text-sm text-muted-foreground">{Boolean(val) ? 'Yes' : 'No'}</span>
+                            </div>
+                          ) : def.field_type === 'select' ? (
+                            <Select
+                              value={String(val ?? '')}
+                              onValueChange={(v) => onChange(v)}
+                            >
+                              <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                              <SelectContent>
+                                {def.options.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : def.field_type === 'textarea' ? (
+                            <Textarea
+                              value={String(val ?? '')}
+                              onChange={(e) => onChange(e.target.value)}
+                              placeholder={`Enter ${def.field_label.toLowerCase()}…`}
+                              rows={2}
+                            />
+                          ) : (
+                            <Input
+                              type={def.field_type === 'number' ? 'number' : def.field_type === 'date' ? 'date' : 'text'}
+                              value={String(val ?? '')}
+                              onChange={(e) => onChange(def.field_type === 'number' ? Number(e.target.value) : e.target.value)}
+                              placeholder={`Enter ${def.field_label.toLowerCase()}…`}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <Button onClick={handleSubmit} className="w-full" disabled={!formData.name || !formData.phone}>
                   {editingLead ? 'Update Lead' : 'Create Lead'}
                 </Button>

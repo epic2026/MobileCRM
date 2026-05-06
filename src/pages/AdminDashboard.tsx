@@ -133,6 +133,7 @@ import {
 import { format, subDays } from 'date-fns';
 import LeadImport from '@/components/admin/LeadImport';
 import LeadAssignment from '@/components/admin/LeadAssignment';
+import CustomFieldsManager from '@/components/admin/CustomFieldsManager';
 import LeadDetailSheet from '@/components/LeadDetailSheet';
 import type { Lead as LeadHookType, LeadStatus as LeadStatusHookType } from '@/hooks/useLeads';
 import type { Database } from '@/integrations/supabase/types';
@@ -3281,6 +3282,9 @@ const AdminDashboard = () => {
           </div>
         )}
       </div>
+
+      {/* Custom Fields */}
+      {currentTenant && <CustomFieldsManager />}
     </div>
   );
 

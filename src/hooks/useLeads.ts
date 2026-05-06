@@ -18,6 +18,7 @@ export interface Lead {
   source: string | null;
   notes: string | null;
   value: number | null;
+  custom_fields: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   user_id: string | null;
