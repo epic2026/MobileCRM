@@ -175,10 +175,14 @@ const LeadAssignment = ({ onLeadClick }: LeadAssignmentProps) => {
 
     const matchesStatus = statusFilter === 'all' || lead.status === statusFilter;
 
+    // A lead is "assigned" only when its user_id maps to an active user in the system.
+    // Leads whose assigned user was deleted or deactivated show "Unassigned" in the table
+    // and must also appear under the Unassigned filter, not the Assigned one.
+    const isAssigned = Boolean(lead.user_id) && userMap.has(lead.user_id!);
     const matchesAssigned =
       assignedFilter === 'all' ||
-      (assignedFilter === 'assigned' && lead.user_id) ||
-      (assignedFilter === 'unassigned' && !lead.user_id);
+      (assignedFilter === 'assigned' && isAssigned) ||
+      (assignedFilter === 'unassigned' && !isAssigned);
 
     return matchesSearch && matchesStatus && matchesAssigned;
   });
@@ -199,10 +203,9 @@ const LeadAssignment = ({ onLeadClick }: LeadAssignmentProps) => {
 
   const handleAssign = () => {
     if (selectedLeads.length === 0) return;
-    assignLeads.mutate({
-      leadIds: selectedLeads,
-      userId: selectedSalesUser || null,
-    });
+    // "unassign" is the sentinel value from the Select — must become null in the DB
+    const userId = selectedSalesUser === 'unassign' ? null : (selectedSalesUser || null);
+    assignLeads.mutate({ leadIds: selectedLeads, userId });
   };
 
   return (
