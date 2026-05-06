@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Building, Check, Loader2, X } from 'lucide-react';
+import { Building, Check, Loader2, X, Smartphone, Download } from 'lucide-react';
 
 type Stage = 'loading' | 'set-password' | 'success' | 'error';
+
+const APP_URL = 'https://mobilecrm-production.up.railway.app';
 
 const AcceptInvite = () => {
   const navigate = useNavigate();
@@ -16,12 +19,43 @@ const AcceptInvite = () => {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showDownloadBanner, setShowDownloadBanner] = useState(false);
 
-  // On mount, exchange the invite token from the URL hash into a session.
-  // detectSessionInUrl is false (mobile app setting) so we do this manually.
+  const isNative = Capacitor.isNativePlatform();
+  const isAndroidBrowser = !isNative && /android/i.test(navigator.userAgent);
+
+  // On Android browser: try to open the app via intent URI.
+  // Tokens are moved from hash to query params because intent:// uses # as its separator.
   useEffect(() => {
-    const hash = window.location.hash.substring(1);
-    const params = new URLSearchParams(hash);
+    if (!isAndroidBrowser) return;
+
+    const rawHash = window.location.hash.substring(1);
+    const rawSearch = window.location.search.substring(1);
+    const paramStr = rawHash || rawSearch;
+    if (!paramStr.includes('access_token')) return;
+
+    const params = new URLSearchParams(paramStr);
+    const fallback = encodeURIComponent(`${APP_URL}/install`);
+    const intentUrl =
+      `intent://invite?${params.toString()}` +
+      `#Intent;scheme=com.lovable.mobilecrmwithsimcalls;` +
+      `package=com.lovable.mobilecrmwithsimcalls;` +
+      `S.browser_fallback_url=${fallback};end`;
+
+    window.location.href = intentUrl;
+
+    // If the page is still visible after 2.5 s the app wasn't installed
+    const timer = setTimeout(() => setShowDownloadBanner(true), 2500);
+    return () => clearTimeout(timer);
+  }, [isAndroidBrowser]);
+
+  // Exchange invite tokens for a Supabase session.
+  // Reads from URL hash (Supabase web redirect) or query params (app deep link).
+  useEffect(() => {
+    const rawHash = window.location.hash.substring(1);
+    const rawSearch = window.location.search.substring(1);
+    const paramStr = rawHash || rawSearch;
+    const params = new URLSearchParams(paramStr);
     const accessToken = params.get('access_token');
     const refreshToken = params.get('refresh_token');
     const type = params.get('type');
@@ -39,7 +73,6 @@ const AcceptInvite = () => {
           setErrorMessage(error.message);
           setStage('error');
         } else {
-          // Clear the token from the URL so it can't be replayed
           window.history.replaceState(null, '', window.location.pathname);
           setStage('set-password');
         }
@@ -88,7 +121,38 @@ const AcceptInvite = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb]">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#f5f7fb] p-4">
+
+      {/* Download banner — shown on Android browser when app didn't open */}
+      {showDownloadBanner && (
+        <div className="mb-6 w-full max-w-md rounded-2xl bg-primary p-5 text-primary-foreground shadow-lg">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20">
+              <Smartphone className="h-6 w-6" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Get the Sales CRM App</p>
+              <p className="mt-0.5 text-sm text-primary-foreground/80">
+                Open this invite in the app for the best experience.
+              </p>
+              <a
+                href={`${APP_URL}/install`}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-primary shadow-sm"
+              >
+                <Download className="h-4 w-4" />
+                Download App
+              </a>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowDownloadBanner(false)}
+            className="mt-3 w-full text-center text-xs text-primary-foreground/70 underline"
+          >
+            Continue setting up in browser
+          </button>
+        </div>
+      )}
+
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#2f64d6] via-[#2854c5] to-[#173785] text-white shadow-lg">
@@ -98,7 +162,7 @@ const AcceptInvite = () => {
             {stage === 'set-password' ? 'Set Your Password' : 'MobileCRM'}
           </CardTitle>
           <CardDescription>
-            {stage === 'loading' && 'Verifying your invite link…'}
+            {stage === 'loading' && (isAndroidBrowser ? 'Opening app…' : 'Verifying your invite link…')}
             {stage === 'set-password' && 'Choose a password to activate your account.'}
             {stage === 'success' && 'Your account is ready.'}
             {stage === 'error' && 'Something went wrong.'}

@@ -17,6 +17,7 @@ import Install from "./pages/Install";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
 import AcceptInvite from "./pages/AcceptInvite";
+import DeepLinkHandler from "@/components/DeepLinkHandler";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ const AppContent = () => {
             <Toaster />
             <Sonner />
             <BrowserRouter>
+            <DeepLinkHandler />
             <Routes>
               {/* Sales Mobile App Routes */}
               <Route path="/auth" element={<Auth />} />

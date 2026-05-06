@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { z } from 'zod';
+import { Capacitor } from '@capacitor/core';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Phone, User, Mail, Lock, LogIn, UserPlus, Shield } from 'lucide-react';
+import { Phone, User, Mail, Lock, LogIn, UserPlus, Shield, Smartphone, Download, X } from 'lucide-react';
+
+const APP_URL = 'https://mobilecrm-production.up.railway.app';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -34,17 +37,21 @@ const Auth = () => {
     confirmPassword: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [appBannerDismissed, setAppBannerDismissed] = useState(false);
 
   const { signIn, signUp, user, role, isLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // True when running in Android mobile browser (not inside the Capacitor app)
+  const isAndroidBrowser = !Capacitor.isNativePlatform() && /android/i.test(navigator.userAgent);
+  const showAppScreen = isAndroidBrowser && !appBannerDismissed;
 
   useEffect(() => {
     if (user && !isLoading && role) {
       if (role === 'sales') {
         navigate('/');
       } else if (role === 'admin' || role === 'super_admin') {
-        // Admin users should go to admin dashboard
         navigate('/admin');
       }
     }
@@ -145,6 +152,38 @@ const Auth = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  // Full-screen app enforcement for Android browser visitors
+  if (showAppScreen) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-6">
+        <div className="w-full max-w-sm text-center">
+          <div className="w-24 h-24 bg-primary/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <Smartphone className="w-12 h-12 text-primary" />
+          </div>
+          <h1 className="text-2xl font-bold mb-2">Use the Sales CRM App</h1>
+          <p className="text-muted-foreground mb-8">
+            The Sales CRM is a native mobile app. Install it on your device for the full experience — call logging, AI agent, and more.
+          </p>
+
+          <a href={`${APP_URL}/install`} className="block">
+            <Button size="lg" className="w-full h-14 text-base mb-4">
+              <Download className="w-5 h-5 mr-2" />
+              Download the App
+            </Button>
+          </a>
+
+          <button
+            onClick={() => setAppBannerDismissed(true)}
+            className="flex items-center justify-center gap-1.5 mx-auto text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="w-4 h-4" />
+            I'm an admin, continue in browser
+          </button>
+        </div>
       </div>
     );
   }

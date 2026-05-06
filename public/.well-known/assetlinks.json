@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.lovable.mobilecrmwithsimcalls",
+    "sha256_cert_fingerprints": [
+      "5A:29:96:23:51:C1:D4:01:61:41:F4:65:93:4B:D5:E8:04:23:79:CB:FF:D9:62:C1:E3:85:AC:7E:05:8A:4D:B8"
+    ]
+  }
+}]
