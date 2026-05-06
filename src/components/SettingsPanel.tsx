@@ -1,20 +1,16 @@
-import { Bell, LogOut, ChevronRight, FileText, Sun, Moon } from 'lucide-react';
+import { Bell, LogOut, ChevronRight, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Switch } from '@/components/ui/switch';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTheme } from 'next-themes';
 import { useAuth } from '@/contexts/AuthContext';
 import CallRecordingToggle from '@/components/CallRecordingToggle';
 
 const SettingsPanel = () => {
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState(true);
-  const { theme, setTheme } = useTheme();
   const { user, role, signOut } = useAuth();
-
-  const isDark = theme === 'dark';
 
   const handleSignOut = async () => {
     await signOut();
@@ -54,13 +50,6 @@ const SettingsPanel = () => {
       <div className="px-4 mb-6">
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Preferences</h2>
         <div className="glass-card divide-y divide-border">
-          <div className="flex items-center justify-between p-4">
-            <div className="flex items-center gap-3">
-              {isDark ? <Moon className="h-5 w-5 text-muted-foreground" /> : <Sun className="h-5 w-5 text-muted-foreground" />}
-              <span className="text-foreground">Dark Mode</span>
-            </div>
-            <Switch checked={isDark} onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')} />
-          </div>
           <div className="flex items-center justify-between p-4">
             <div className="flex items-center gap-3">
               <Bell className="h-5 w-5 text-muted-foreground" />
