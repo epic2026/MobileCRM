@@ -37,7 +37,7 @@ interface TenantContextType {
   tenantMembers: TenantMember[];
   isLoadingTenants: boolean;
   switchTenant: (tenantId: string) => Promise<void>;
-  createTenant: (name: string, slug: string, managerUserId: string) => Promise<Tenant>;
+  createTenant: (name: string, slug: string, managerUserId?: string) => Promise<Tenant>;
   updateTenant: (tenantId: string, updates: Partial<Tenant>) => Promise<void>;
   deleteTenant: (tenantId: string) => Promise<void>;
   assignUserToTenant: (tenantId: string, userId: string) => Promise<void>;
@@ -227,14 +227,14 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
       });
   }, [refreshTenants, user]);
 
-  const createTenant = useCallback(async (name: string, slug: string, managerUserId: string) => {
+  const createTenant = useCallback(async (name: string, slug: string, managerUserId?: string) => {
     if (!user) throw new Error('User not authenticated');
     if (!isSuperAdmin) throw new Error('Only super admins can create tenants');
 
     const { data, error } = await supabase.rpc('admin_create_tenant', {
       p_name: name.trim(),
       p_slug: slug.trim().toLowerCase(),
-      p_manager_user_id: managerUserId,
+      p_manager_user_id: managerUserId ?? null,
     });
 
     if (error) throw error;

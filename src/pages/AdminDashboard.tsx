@@ -275,7 +275,6 @@ const AdminDashboard = () => {
   const [isEditingTenant, setIsEditingTenant] = useState(false);
   const [newTenantName, setNewTenantName] = useState('');
   const [newTenantSlug, setNewTenantSlug] = useState('');
-  const [newTenantManagerId, setNewTenantManagerId] = useState('');
 
   const isSuperAdmin = role === 'super_admin';
   const canAccessAdminDashboard = role === 'admin' || role === 'super_admin';
@@ -2606,40 +2605,18 @@ const AdminDashboard = () => {
                   onChange={(e) => setNewTenantSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-tenant-manager">Tenant Manager (Admin only)</Label>
-                <Select
-                  value={newTenantManagerId}
-                  onValueChange={setNewTenantManagerId}
-                >
-                  <SelectTrigger id="new-tenant-manager">
-                    <SelectValue placeholder="Select user..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {eligibleTenantManagers.length === 0 && (
-                      <SelectItem value="no-admin-users" disabled>No unassigned admin users available</SelectItem>
-                    )}
-                    {eligibleTenantManagers.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.full_name || user.email} ({user.email})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
             <Button
               onClick={async () => {
-                if (!newTenantName.trim() || !newTenantSlug.trim() || !newTenantManagerId) {
-                  toast({ title: 'Missing details', description: 'Tenant name, slug, and manager are required', variant: 'destructive' });
+                if (!newTenantName.trim() || !newTenantSlug.trim()) {
+                  toast({ title: 'Missing details', description: 'Tenant name and slug are required', variant: 'destructive' });
                   return;
                 }
                 try {
-                  await createTenant(newTenantName.trim(), newTenantSlug.trim(), newTenantManagerId);
-                  toast({ title: 'Success', description: 'Tenant created successfully.' });
+                  await createTenant(newTenantName.trim(), newTenantSlug.trim());
+                  toast({ title: 'Success', description: 'Tenant created. Select it and add an admin as manager.' });
                   setNewTenantName('');
                   setNewTenantSlug('');
-                  setNewTenantManagerId('');
                 } catch (error: any) {
                   toast({ title: 'Error', description: error.message || 'Failed to create tenant', variant: 'destructive' });
                 }
