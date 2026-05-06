@@ -22,7 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, Users, UserPlus, Filter, Upload } from 'lucide-react';
+import { Search, Users, UserPlus, Filter, Upload, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import type { Database } from '@/integrations/supabase/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -73,6 +74,20 @@ const LeadAssignment = ({ onLeadClick }: LeadAssignmentProps) => {
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [selectedSalesUser, setSelectedSalesUser] = useState<string>('');
   const [isImportOpen, setIsImportOpen] = useState(false);
+
+  const downloadTemplate = () => {
+    const rows = [
+      { name: 'Rahul Sharma', phone: '9876543210', email: 'rahul@example.com', company: 'Acme Pvt Ltd', source: 'Website', notes: 'Interested in enterprise plan', value: 50000 },
+      { name: 'Priya Mehta',  phone: '9123456789', email: 'priya@example.com', company: 'Beta Corp',    source: 'Referral', notes: '',                              value: 25000 },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows, {
+      header: ['name', 'phone', 'email', 'company', 'source', 'notes', 'value'],
+    });
+    ws['!cols'] = [18, 14, 26, 20, 14, 30, 10].map((wch) => ({ wch }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Leads');
+    XLSX.writeFile(wb, 'leads_import_template.xlsx');
+  };
 
   // Fetch all leads (admin sees all)
   const { data: leads = [], isLoading: leadsLoading } = useQuery({
@@ -203,7 +218,12 @@ const LeadAssignment = ({ onLeadClick }: LeadAssignmentProps) => {
               View all leads and assign them to sales users
             </CardDescription>
           </div>
-          <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={downloadTemplate}>
+              <Download className="mr-2 h-4 w-4" />
+              Download Template
+            </Button>
+            <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm">
                 <Upload className="mr-2 h-4 w-4" />
@@ -218,6 +238,7 @@ const LeadAssignment = ({ onLeadClick }: LeadAssignmentProps) => {
               <LeadImport />
             </DialogContent>
           </Dialog>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
