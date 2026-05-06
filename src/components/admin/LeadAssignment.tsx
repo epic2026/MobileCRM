@@ -22,11 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, Users, UserPlus, Filter, Upload, Download } from 'lucide-react';
+import { Search, Users, UserPlus, Filter, Upload, Download, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import type { Database } from '@/integrations/supabase/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import LeadImport from '@/components/admin/LeadImport';
 import { useTenant } from '@/contexts/TenantContext';
 
@@ -74,6 +76,9 @@ const LeadAssignment = ({ onLeadClick }: LeadAssignmentProps) => {
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [selectedSalesUser, setSelectedSalesUser] = useState<string>('');
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
+  const emptyForm = { name: '', phone: '', email: '', company: '', source: '', notes: '', value: '', status: 'new' as LeadStatus, user_id: '' };
+  const [addForm, setAddForm] = useState(emptyForm);
 
   const downloadTemplate = () => {
     const rows = [
@@ -165,6 +170,34 @@ const LeadAssignment = ({ onLeadClick }: LeadAssignmentProps) => {
     },
   });
 
+  const createLead = useMutation({
+    mutationFn: async () => {
+      if (!currentTenant) throw new Error('No tenant');
+      const { error } = await supabase.from('leads').insert({
+        name: addForm.name.trim(),
+        phone: addForm.phone.trim(),
+        email: addForm.email.trim() || null,
+        company: addForm.company.trim() || null,
+        source: addForm.source.trim() || null,
+        notes: addForm.notes.trim() || null,
+        value: addForm.value ? parseFloat(addForm.value) : null,
+        status: addForm.status,
+        user_id: (addForm.user_id && addForm.user_id !== 'unassigned') ? addForm.user_id : null,
+        tenant_id: currentTenant.id,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-leads', currentTenant?.id] });
+      toast({ title: 'Lead Added', description: `${addForm.name} has been added.` });
+      setAddForm(emptyForm);
+      setIsAddLeadOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Failed to add lead', description: error.message, variant: 'destructive' });
+    },
+  });
+
   // Filter leads
   const filteredLeads = leads.filter((lead) => {
     const matchesSearch =
@@ -227,20 +260,96 @@ const LeadAssignment = ({ onLeadClick }: LeadAssignmentProps) => {
               Download Template
             </Button>
             <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Upload className="mr-2 h-4 w-4" />
-                Import Leads
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Import Leads</DialogTitle>
-                <DialogDescription>Upload CSV/Excel and import leads for assignment.</DialogDescription>
-              </DialogHeader>
-              <LeadImport />
-            </DialogContent>
-          </Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import Leads
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+                <DialogHeader>
+                  <DialogTitle>Import Leads</DialogTitle>
+                  <DialogDescription>Upload CSV/Excel and import leads for assignment.</DialogDescription>
+                </DialogHeader>
+                <LeadImport />
+              </DialogContent>
+            </Dialog>
+            <Dialog open={isAddLeadOpen} onOpenChange={(o) => { setIsAddLeadOpen(o); if (!o) setAddForm(emptyForm); }}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Lead
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Add New Lead</DialogTitle>
+                  <DialogDescription>Manually create a lead and optionally assign it.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label>Name <span className="text-destructive">*</span></Label>
+                      <Input placeholder="John Doe" value={addForm.name} onChange={(e) => setAddForm((p) => ({ ...p, name: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Phone <span className="text-destructive">*</span></Label>
+                      <Input placeholder="+91 98765 43210" value={addForm.phone} onChange={(e) => setAddForm((p) => ({ ...p, phone: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Email</Label>
+                      <Input type="email" placeholder="john@example.com" value={addForm.email} onChange={(e) => setAddForm((p) => ({ ...p, email: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Company</Label>
+                      <Input placeholder="Acme Inc" value={addForm.company} onChange={(e) => setAddForm((p) => ({ ...p, company: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Source</Label>
+                      <Input placeholder="Website, Referral…" value={addForm.source} onChange={(e) => setAddForm((p) => ({ ...p, source: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Value (₹)</Label>
+                      <Input type="number" placeholder="50000" value={addForm.value} onChange={(e) => setAddForm((p) => ({ ...p, value: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Status</Label>
+                    <Select value={addForm.status} onValueChange={(v) => setAddForm((p) => ({ ...p, status: v as LeadStatus }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(statusLabels).map(([k, l]) => (
+                          <SelectItem key={k} value={k}>{l}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Assign To</Label>
+                    <Select value={addForm.user_id} onValueChange={(v) => setAddForm((p) => ({ ...p, user_id: v }))}>
+                      <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                        {salesUsers.map((u) => (
+                          <SelectItem key={u.id} value={u.id}>{u.full_name || u.email}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Notes</Label>
+                    <Textarea placeholder="Add notes…" rows={3} value={addForm.notes} onChange={(e) => setAddForm((p) => ({ ...p, notes: e.target.value }))} />
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={() => createLead.mutate()}
+                    disabled={!addForm.name.trim() || !addForm.phone.trim() || createLead.isPending}
+                  >
+                    {createLead.isPending ? 'Adding…' : 'Add Lead'}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </CardHeader>
