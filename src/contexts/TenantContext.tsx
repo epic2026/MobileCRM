@@ -392,3 +392,11 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
 };
+
+export const useTenant = (): TenantContextType => {
+  const context = useContext(TenantContext);
+  if (!context) {
+    throw new Error('useTenant must be used within a TenantProvider');
+  }
+  return context;
+};
